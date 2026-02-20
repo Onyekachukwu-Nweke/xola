@@ -16,10 +16,13 @@ use thiserror::Error;
 
 pub mod mock;
 pub mod registry;
+pub mod validator;
 
 // Re-export registry types for convenient access
-#[allow(unused_imports)] // RegistryError not yet used - will be used in L1-03+
+#[allow(unused_imports)] // RegistryError not yet used - will be used in L1-04+
 pub use registry::{RegistryError, ToolRegistry};
+#[allow(unused_imports)] // InputValidator not yet used directly - used via ToolRegistry
+pub use validator::InputValidator;
 
 /// Errors that can occur during tool execution.
 ///

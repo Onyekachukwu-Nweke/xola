@@ -4,7 +4,7 @@
 //! available to the agent. Tools are registered during startup and then
 //! accessed by name during execution.
 
-use super::Tool;
+use super::{Tool, ToolError};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -140,6 +140,31 @@ impl ToolRegistry {
             })
             .collect()
     }
+
+    /// Validates input against a tool's schema.
+    ///
+    /// This is a convenience method that looks up the tool, retrieves its schema,
+    /// and validates the input. Used by the dispatcher before tool execution.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ToolError::NotFound` if the tool doesn't exist.
+    /// Returns `ToolError::InvalidInput` if validation fails.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let input = json!({ "message": "hello" });
+    /// registry.validate_input("mock_echo", &input).unwrap();
+    /// ```
+    pub fn validate_input(&self, tool_name: &str, input: &Value) -> Result<(), ToolError> {
+        let tool = self
+            .get(tool_name)
+            .ok_or_else(|| ToolError::NotFound(tool_name.to_string()))?;
+
+        let schema = tool.input_schema();
+        crate::tools::validator::InputValidator::validate(&schema, input)
+    }
 }
 
 impl Default for ToolRegistry {
@@ -237,5 +262,54 @@ mod tests {
 
         let schemas = registry.list_schemas();
         assert_eq!(schemas.len(), 1);
+    }
+
+    #[test]
+    fn test_validate_input_success() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(MockTool)).unwrap();
+
+        let input = json!({ "message": "test" });
+        assert!(registry.validate_input("mock_echo", &input).is_ok());
+    }
+
+    #[test]
+    fn test_validate_input_missing_field() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(MockTool)).unwrap();
+
+        let input = json!({});
+        let result = registry.validate_input("mock_echo", &input);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolError::InvalidInput(_) => {}
+            _ => panic!("Expected InvalidInput error"),
+        }
+    }
+
+    #[test]
+    fn test_validate_input_wrong_type() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(MockTool)).unwrap();
+
+        let input = json!({ "message": 123 });
+        assert!(registry.validate_input("mock_echo", &input).is_err());
+    }
+
+    #[test]
+    fn test_validate_input_tool_not_found() {
+        let registry = ToolRegistry::new();
+
+        let input = json!({ "message": "test" });
+        let result = registry.validate_input("nonexistent", &input);
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolError::NotFound(name) => {
+                assert_eq!(name, "nonexistent");
+            }
+            _ => panic!("Expected NotFound error"),
+        }
     }
 }

@@ -66,6 +66,70 @@ The registry returns `Result<(), RegistryError>` from `register()`:
 
 This prevents silent overwrites and helps catch configuration errors early.
 
+## JSON Schema Validation (L1-03)
+
+All tool inputs are validated against their JSON Schemas before execution using the `jsonschema` crate.
+
+### Validation Flow
+
+```
+Tool Input → InputValidator.validate() → Tool.execute()
+             ↓ (if invalid)
+         ToolError::InvalidInput
+```
+
+### Usage
+
+```rust
+use xola_runtime::tools::{ToolRegistry, InputValidator};
+use serde_json::json;
+
+let mut registry = ToolRegistry::new();
+// ... register tools ...
+
+// Validate via registry (convenience method)
+let input = json!({ "query": "search term" });
+registry.validate_input("web_search", &input)?;
+
+// Or validate directly with a schema
+let schema = json!({
+    "type": "object",
+    "properties": {
+        "query": { "type": "string" }
+    },
+    "required": ["query"]
+});
+InputValidator::validate(&schema, &input)?;
+```
+
+### Error Handling
+
+Validation failures return `ToolError::InvalidInput` with detailed error messages:
+```
+Input validation failed: "message" is a required property
+```
+
+These messages help the LLM understand what went wrong and self-correct in the next attempt.
+
+### Testing Validation
+
+Tools should have tests for both valid and invalid inputs:
+```rust
+#[test]
+fn test_valid_input() {
+    let schema = tool.input_schema();
+    let input = json!({ /* valid input */ });
+    assert!(InputValidator::validate(&schema, &input).is_ok());
+}
+
+#[test]
+fn test_invalid_input() {
+    let schema = tool.input_schema();
+    let input = json!({ /* invalid input */ });
+    assert!(InputValidator::validate(&schema, &input).is_err());
+}
+```
+
 ## Adding a New Tool
 
 See [docs/contributing.md](../../docs/contributing.md#adding-a-new-tool) for the full checklist.

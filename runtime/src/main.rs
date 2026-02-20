@@ -17,6 +17,7 @@ async fn main() {
     println!("Xola runtime initializing...");
     println!("L1-01: Tool trait defined ✓");
     println!("L1-02: Tool registry implemented ✓");
+    println!("L1-03: JSON Schema validation implemented ✓");
 
     // Initialize registry and register tools
     let mut registry = ToolRegistry::new();
@@ -37,16 +38,30 @@ async fn main() {
         println!("  - {}: {}", schema["name"], schema["description"]);
     }
 
-    // Demonstrate tool execution
-    let input = json!({ "message": "Registry working!" });
-    match tool.execute(input).await {
-        Ok(result) => println!("\nTool execution test: {:?}", result),
-        Err(e) => eprintln!("\nTool execution failed: {}", e),
+    // Demonstrate validation with valid input
+    println!("\nValidation tests:");
+    let valid_input = json!({ "message": "Registry working!" });
+    match registry.validate_input("mock_echo", &valid_input) {
+        Ok(()) => println!("  ✓ Valid input accepted"),
+        Err(e) => eprintln!("  ✗ Unexpected error: {}", e),
+    }
+
+    // Demonstrate validation with invalid input
+    let invalid_input = json!({ "wrong_field": "oops" });
+    match registry.validate_input("mock_echo", &invalid_input) {
+        Ok(()) => eprintln!("  ✗ Invalid input was accepted (should have failed)"),
+        Err(e) => println!("  ✓ Invalid input rejected: {}", e),
+    }
+
+    // Demonstrate tool execution with validated input
+    println!("\nTool execution test:");
+    match tool.execute(valid_input).await {
+        Ok(result) => println!("  Result: {:?}", result),
+        Err(e) => eprintln!("  Execution failed: {}", e),
     }
 
     // Placeholder - will be expanded in future tasks:
-    // - L1-03: JSON Schema validation
-    // - L1-04: Dispatcher with timeout
+    // - L1-04: Dispatcher with timeout (orchestrates validate + execute)
     // - L2-03+: Memory subsystem
     // - L3-01+: Planning layer
     // - L4-01+: Reliability layer
