@@ -96,7 +96,7 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 
 | ID | Task | Role | Status | Blocker |
 |----|------|------|--------|---------|
-| L1-01 | Define `Tool` trait with `execute(&self, input: Value) -> Result<Value>` | RUNTIME | 🔲 todo | — |
+| L1-01 | Define `Tool` trait with `async fn execute(&self, input: Value) -> Result<Value, ToolError>` | RUNTIME | ✅ done | — |
 | L1-02 | Implement `ToolRegistry` as `HashMap<String, Arc<dyn Tool>>` | RUNTIME | 🔲 todo | L1-01 |
 | L1-03 | JSON Schema validation on tool inputs via `jsonschema` crate | RUNTIME | 🔲 todo | L1-02 |
 | L1-04 | Per-tool `tokio::time::timeout` with configurable duration | RUNTIME | 🔲 todo | L1-02 |

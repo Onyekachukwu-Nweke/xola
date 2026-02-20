@@ -1,0 +1,25 @@
+[package]
+name = "xola-runtime"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.70"
+
+[dependencies]
+# Async runtime - everything async lives here
+tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "time"] }
+
+# Structured data serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling with derive macros
+thiserror = "2.0"
+
+# JSON Schema validation for tool inputs
+jsonschema = "0.26"
+
+# Structured logging and tracing
+tracing = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
