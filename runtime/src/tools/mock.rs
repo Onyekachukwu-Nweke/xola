@@ -4,6 +4,7 @@
 //! used for testing the tool trait and registry without external dependencies.
 
 use super::{Tool, ToolError};
+use async_trait::async_trait;
 use serde_json::{json, Value};
 
 /// A mock tool that echoes back its input.
@@ -33,6 +34,7 @@ use serde_json::{json, Value};
 /// ```
 pub struct MockTool;
 
+#[async_trait]
 impl Tool for MockTool {
     fn name(&self) -> &str {
         "mock_echo"

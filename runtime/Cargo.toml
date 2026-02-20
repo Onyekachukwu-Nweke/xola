@@ -8,6 +8,9 @@ rust-version = "1.70"
 # Async runtime - everything async lives here
 tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "time"] }
 
+# Async trait support for dyn-compatible async methods
+async-trait = "0.1"
+
 # Structured data serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

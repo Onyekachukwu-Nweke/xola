@@ -11,6 +11,61 @@ This directory contains the `Tool` trait definition and all tool implementations
 | `web_search` | ⏳ Planned | Searches via Serper/Brave API (L1-06) |
 | `code_exec` | ⏳ Planned | Executes code in Docker sandbox (L1-07) |
 
+## Tool Registry (L1-02)
+
+The `ToolRegistry` manages all available tools. It provides:
+- **Registration**: Add tools during startup with duplicate name checking
+- **Lookup**: Retrieve tools by name for execution
+- **Schema listing**: Generate JSON schemas for LLM tool selection
+
+### Usage
+
+```rust
+use std::sync::Arc;
+use xola_runtime::tools::{ToolRegistry, mock::MockTool};
+
+// Create registry
+let mut registry = ToolRegistry::new();
+
+// Register tools
+registry.register(Arc::new(MockTool))
+    .expect("Duplicate tool name");
+
+// Look up a tool
+let tool = registry.get("mock_echo").unwrap();
+
+// Get schemas for LLM prompt
+let schemas = registry.list_schemas();
+```
+
+### Schema Format
+
+Schemas returned by `list_schemas()` match the IPC `/reason` endpoint format:
+```json
+[
+  {
+    "name": "mock_echo",
+    "description": "A mock tool that echoes back the input message",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "message": { "type": "string" }
+      },
+      "required": ["message"]
+    }
+  }
+]
+```
+
+This format is sent to the Python LLM surface for tool selection.
+
+### Registry Error Handling
+
+The registry returns `Result<(), RegistryError>` from `register()`:
+- `RegistryError::DuplicateName(String)` - Tool name already registered
+
+This prevents silent overwrites and helps catch configuration errors early.
+
 ## Adding a New Tool
 
 See [docs/contributing.md](../../docs/contributing.md#adding-a-new-tool) for the full checklist.

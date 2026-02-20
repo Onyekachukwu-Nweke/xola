@@ -10,10 +10,16 @@
 //!
 //! Related tasks: L1-01 through L1-09 in AGENTS.md
 
+use async_trait::async_trait;
 use serde_json::Value;
 use thiserror::Error;
 
 pub mod mock;
+pub mod registry;
+
+// Re-export registry types for convenient access
+#[allow(unused_imports)] // RegistryError not yet used - will be used in L1-03+
+pub use registry::{RegistryError, ToolRegistry};
 
 /// Errors that can occur during tool execution.
 ///
@@ -100,6 +106,7 @@ pub enum ToolError {
 ///     }
 /// }
 /// ```
+#[async_trait]
 #[allow(dead_code)] // input_schema not yet used - will be used in L1-03 (validation)
 pub trait Tool: Send + Sync {
     /// Unique identifier for this tool.
