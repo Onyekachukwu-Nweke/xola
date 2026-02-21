@@ -6,4 +6,5 @@
 //!
 //! See CLAUDE.md and docs/ for architecture and design rationale.
 
+pub mod memory;
 pub mod tools;

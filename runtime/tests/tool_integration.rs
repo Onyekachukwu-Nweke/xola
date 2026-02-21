@@ -67,7 +67,9 @@ async fn test_mock_tool_validation_through_registry() {
     let input = json!({ "wrong": "field" });
     let timeout = Duration::from_secs(5);
 
-    let result = registry.execute_with_timeout("mock_echo", input, timeout).await;
+    let result = registry
+        .execute_with_timeout("mock_echo", input, timeout)
+        .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -107,7 +109,9 @@ async fn test_url_fetch_404_error() {
     let input = json!({ "url": "https://httpbin.org/status/404" });
     let timeout = Duration::from_secs(30);
 
-    let result = registry.execute_with_timeout("url_fetch", input, timeout).await;
+    let result = registry
+        .execute_with_timeout("url_fetch", input, timeout)
+        .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -122,7 +126,9 @@ async fn test_url_fetch_validation_missing_url() {
     let input = json!({ "wrong_field": "value" });
     let timeout = Duration::from_secs(5);
 
-    let result = registry.execute_with_timeout("url_fetch", input, timeout).await;
+    let result = registry
+        .execute_with_timeout("url_fetch", input, timeout)
+        .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -190,7 +196,9 @@ async fn test_web_search_validation_missing_query() {
     let input = json!({ "num_results": 5 });
     let timeout = Duration::from_secs(5);
 
-    let result = registry.execute_with_timeout("web_search", input, timeout).await;
+    let result = registry
+        .execute_with_timeout("web_search", input, timeout)
+        .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -291,10 +299,7 @@ async fn test_code_exec_stderr_captured() {
         .await
         .expect("CodeExecTool execution failed");
 
-    assert!(result["stderr"]
-        .as_str()
-        .unwrap()
-        .contains("error output"));
+    assert!(result["stderr"].as_str().unwrap().contains("error output"));
 }
 
 #[tokio::test]
@@ -329,14 +334,13 @@ async fn test_code_exec_timeout() {
     });
     let timeout = Duration::from_secs(10);
 
-    let result = registry.execute_with_timeout("code_exec", input, timeout).await;
+    let result = registry
+        .execute_with_timeout("code_exec", input, timeout)
+        .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(
-        err.to_string().contains("timeout")
-            || err.to_string().contains("exceeded")
-    );
+    assert!(err.to_string().contains("timeout") || err.to_string().contains("exceeded"));
 }
 
 #[tokio::test]
@@ -350,14 +354,13 @@ async fn test_code_exec_oom() {
     });
     let timeout = Duration::from_secs(10);
 
-    let result = registry.execute_with_timeout("code_exec", input, timeout).await;
+    let result = registry
+        .execute_with_timeout("code_exec", input, timeout)
+        .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();
-    assert!(
-        err.to_string().to_lowercase().contains("memory")
-            || err.to_string().contains("OOM")
-    );
+    assert!(err.to_string().to_lowercase().contains("memory") || err.to_string().contains("OOM"));
 }
 
 #[tokio::test]
@@ -368,7 +371,9 @@ async fn test_code_exec_validation_missing_language() {
     let input = json!({ "code": "print('test')" });
     let timeout = Duration::from_secs(5);
 
-    let result = registry.execute_with_timeout("code_exec", input, timeout).await;
+    let result = registry
+        .execute_with_timeout("code_exec", input, timeout)
+        .await;
 
     assert!(result.is_err());
     let err = result.unwrap_err();

@@ -327,9 +327,7 @@ async fn run_container_inner(docker: &Docker, container_id: &str) -> Result<Valu
     let inspect_result = docker
         .inspect_container(container_id, None)
         .await
-        .map_err(|e| {
-            ToolError::ExecutionFailed(format!("Failed to inspect container: {}", e))
-        })?;
+        .map_err(|e| ToolError::ExecutionFailed(format!("Failed to inspect container: {}", e)))?;
 
     let exit_code = inspect_result
         .state
@@ -338,10 +336,7 @@ async fn run_container_inner(docker: &Docker, container_id: &str) -> Result<Valu
 
     // Detect OOM kill (137 = SIGKILL, common for memory limit exceeded)
     if exit_code == EXIT_CODE_OOM_KILLED {
-        warn!(
-            container_id,
-            exit_code, "Container killed (likely OOM)"
-        );
+        warn!(container_id, exit_code, "Container killed (likely OOM)");
         return Err(ToolError::ExecutionFailed(
             "Code execution exceeded 128 MB memory limit (OOM kill)".to_string(),
         ));
