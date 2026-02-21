@@ -14,6 +14,7 @@ use async_trait::async_trait;
 use serde_json::Value;
 use thiserror::Error;
 
+pub mod code_exec;
 pub mod mock;
 pub mod registry;
 pub mod timeout_config;
@@ -22,6 +23,7 @@ pub mod validator;
 pub mod web_search;
 
 // Re-export registry types for convenient access
+pub use code_exec::CodeExecTool;
 #[allow(unused_imports)] // RegistryError not yet used - will be used in future tasks
 pub use registry::{RegistryError, ToolRegistry};
 pub use timeout_config::ToolTimeoutConfig;

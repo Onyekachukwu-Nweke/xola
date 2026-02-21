@@ -12,7 +12,9 @@ mod tools;
 async fn main() {
     use serde_json::json;
     use std::sync::Arc;
-    use tools::{mock::MockTool, ToolRegistry, ToolTimeoutConfig, UrlFetchTool, WebSearchTool};
+    use tools::{
+        mock::MockTool, CodeExecTool, ToolRegistry, ToolTimeoutConfig, UrlFetchTool, WebSearchTool,
+    };
 
     println!("Xola runtime initializing...");
     println!("L1-01: Tool trait defined ✓");
@@ -31,6 +33,9 @@ async fn main() {
     registry
         .register(Arc::new(WebSearchTool))
         .expect("Failed to register web_search tool");
+    registry
+        .register(Arc::new(CodeExecTool))
+        .expect("Failed to register code_exec tool");
 
     println!("\nRegistered tools: {:?}", registry.list_names());
 
@@ -77,7 +82,6 @@ async fn main() {
     }
 
     // Placeholder - will be expanded in future tasks:
-    // - L1-05-07: Real tools (url_fetch, web_search, code_exec)
     // - L1-08: Execution trace logging
     // - L2-03+: Memory subsystem
     // - L3-01+: Planning layer

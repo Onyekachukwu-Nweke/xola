@@ -25,6 +25,12 @@ jsonschema = "0.26"
 # Using native-tls (system OpenSSL) for better compatibility than rustls
 reqwest = { version = "0.12", features = ["json"] }
 
+# Docker client for sandboxed code execution (L1-07)
+bollard = "0.20"
+
+# Stream utilities for consuming bollard log streams
+futures-util = "0.3"
+
 # Structured logging and tracing
 tracing = "0.1"
 

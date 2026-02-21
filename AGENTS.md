@@ -102,7 +102,7 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 | L1-04 | Per-tool `tokio::time::timeout` with configurable duration | RUNTIME | ✅ done | L1-02 |
 | L1-05 | Implement `UrlFetchTool` (reqwest, returns page text) | RUNTIME | ✅ done | L1-03 |
 | L1-06 | Implement `WebSearchTool` (Serper or Brave API) | RUNTIME | ✅ done | L1-03 |
-| L1-07 | Implement `CodeExecTool` via Docker SDK | RUNTIME | 🔲 todo | L1-03 |
+| L1-07 | Implement `CodeExecTool` via Docker SDK | RUNTIME | ✅ done | L1-03 |
 | L1-08 | Execution trace: log inputs, outputs, latency, errors per call | RUNTIME | 🔲 todo | L1-04 |
 | L1-09 | Integration test: call each tool end-to-end | INTEGRATION | 🔲 todo | L1-05, L1-06, L1-07 |
 
