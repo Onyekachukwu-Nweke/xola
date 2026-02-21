@@ -130,6 +130,82 @@ fn test_invalid_input() {
 }
 ```
 
+## Per-Tool Timeouts (L1-04)
+
+All tool executions are wrapped with `tokio::time::timeout` to prevent tools from blocking indefinitely.
+
+### Timeout Flow
+
+```
+Tool Call → validate_input() → execute_with_timeout()
+                                  ↓
+                         tokio::time::timeout(duration)
+                                  ↓
+                            tool.execute(input)
+                                  ↓ (if exceeds timeout)
+                            ToolError::Timeout
+```
+
+### Timeout Configuration
+
+```rust
+use xola_runtime::tools::{ToolRegistry, ToolTimeoutConfig};
+use std::time::Duration;
+
+// Create config with defaults (60s for all tools)
+let mut timeout_config = ToolTimeoutConfig::default();
+
+// Set per-tool overrides
+timeout_config.set_timeout("web_search", 15_000);   // 15 seconds
+timeout_config.set_timeout("url_fetch", 30_000);    // 30 seconds
+timeout_config.set_timeout("code_exec", 300_000);   // 5 minutes
+
+// Execute with timeout
+let timeout = timeout_config.get_timeout("web_search");
+let result = registry
+    .execute_with_timeout("web_search", input, timeout)
+    .await?;
+```
+
+### Environment Variables
+
+Load timeout configuration from environment variables:
+
+```bash
+export XOLA_TOOL_TIMEOUT_MS=60000  # Default: 60 seconds
+```
+
+```rust
+let timeout_config = ToolTimeoutConfig::from_env();
+```
+
+### Error Handling
+
+Timeout failures return `ToolError::Timeout` with the exceeded duration:
+```
+Timeout after 60000ms
+```
+
+The LLM can use this signal to:
+- Retry with a simpler query
+- Switch to a different tool
+- Report timeout to the user
+
+### Testing Timeouts
+
+Tools should verify they complete within reasonable timeouts:
+```rust
+#[tokio::test]
+async fn test_tool_completes_within_timeout() {
+    let timeout = Duration::from_secs(5);
+    let result = registry
+        .execute_with_timeout("mock_echo", input, timeout)
+        .await;
+
+    assert!(result.is_ok());
+}
+```
+
 ## Adding a New Tool
 
 See [docs/contributing.md](../../docs/contributing.md#adding-a-new-tool) for the full checklist.

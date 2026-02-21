@@ -16,11 +16,13 @@ use thiserror::Error;
 
 pub mod mock;
 pub mod registry;
+pub mod timeout_config;
 pub mod validator;
 
 // Re-export registry types for convenient access
-#[allow(unused_imports)] // RegistryError not yet used - will be used in L1-04+
+#[allow(unused_imports)] // RegistryError not yet used - will be used in future tasks
 pub use registry::{RegistryError, ToolRegistry};
+pub use timeout_config::ToolTimeoutConfig;
 #[allow(unused_imports)] // InputValidator not yet used directly - used via ToolRegistry
 pub use validator::InputValidator;
 

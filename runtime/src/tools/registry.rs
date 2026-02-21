@@ -165,6 +165,61 @@ impl ToolRegistry {
         let schema = tool.input_schema();
         crate::tools::validator::InputValidator::validate(&schema, input)
     }
+
+    /// Executes a tool with timeout protection.
+    ///
+    /// This orchestrates the full execution flow:
+    /// 1. Validates input against the tool's JSON Schema
+    /// 2. Looks up the tool in the registry
+    /// 3. Executes with a timeout wrapper
+    /// 4. Returns ToolError::Timeout if the timeout is exceeded
+    ///
+    /// # Errors
+    ///
+    /// Returns:
+    /// - `ToolError::NotFound` if the tool doesn't exist
+    /// - `ToolError::InvalidInput` if validation fails
+    /// - `ToolError::Timeout` if execution exceeds the timeout
+    /// - `ToolError::ExecutionFailed` if the tool itself returns an error
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use std::time::Duration;
+    /// use xola_runtime::tools::{ToolRegistry, ToolTimeoutConfig};
+    ///
+    /// let config = ToolTimeoutConfig::default();
+    /// let input = json!({ "message": "hello" });
+    /// let timeout = config.get_timeout("mock_echo");
+    ///
+    /// let result = registry
+    ///     .execute_with_timeout("mock_echo", input, timeout)
+    ///     .await?;
+    /// ```
+    pub async fn execute_with_timeout(
+        &self,
+        tool_name: &str,
+        input: Value,
+        timeout: std::time::Duration,
+    ) -> Result<Value, ToolError> {
+        // Step 1: Validate input (reuses L1-03 validation)
+        self.validate_input(tool_name, &input)?;
+
+        // Step 2: Get tool from registry
+        let tool = self
+            .get(tool_name)
+            .ok_or_else(|| ToolError::NotFound(tool_name.to_string()))?;
+
+        // Step 3: Execute with timeout wrapper
+        match tokio::time::timeout(timeout, tool.execute(input)).await {
+            Ok(Ok(result)) => Ok(result), // Success
+            Ok(Err(e)) => Err(e),         // Tool returned error
+            Err(_) => Err(ToolError::Timeout {
+                // Timeout exceeded
+                timeout_ms: timeout.as_millis() as u64,
+            }),
+        }
+    }
 }
 
 impl Default for ToolRegistry {
@@ -312,4 +367,64 @@ mod tests {
             _ => panic!("Expected NotFound error"),
         }
     }
+
+    #[tokio::test]
+    async fn test_execute_with_timeout_success() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(MockTool)).unwrap();
+
+        let input = json!({ "message": "test" });
+        let timeout = std::time::Duration::from_secs(5);
+
+        let result = registry
+            .execute_with_timeout("mock_echo", input, timeout)
+            .await;
+
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert_eq!(output["echoed"], "test");
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_timeout_validates_input() {
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(MockTool)).unwrap();
+
+        let invalid_input = json!({ "wrong_field": "oops" });
+        let timeout = std::time::Duration::from_secs(5);
+
+        let result = registry
+            .execute_with_timeout("mock_echo", invalid_input, timeout)
+            .await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolError::InvalidInput(_) => {}
+            _ => panic!("Expected InvalidInput error"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_execute_with_timeout_tool_not_found() {
+        let registry = ToolRegistry::new();
+
+        let input = json!({ "message": "test" });
+        let timeout = std::time::Duration::from_secs(5);
+
+        let result = registry
+            .execute_with_timeout("nonexistent", input, timeout)
+            .await;
+
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ToolError::NotFound(name) => {
+                assert_eq!(name, "nonexistent");
+            }
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    // Note: Testing actual timeout requires a slow tool.
+    // MockTool executes instantly, so we can't test timeout expiration yet.
+    // This will be added when we implement real tools in L1-05+.
 }

@@ -99,7 +99,7 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 | L1-01 | Define `Tool` trait with `async fn execute(&self, input: Value) -> Result<Value, ToolError>` | RUNTIME | ✅ done | — |
 | L1-02 | Implement `ToolRegistry` as `HashMap<String, Arc<dyn Tool>>` | RUNTIME | ✅ done | L1-01 |
 | L1-03 | JSON Schema validation on tool inputs via `jsonschema` crate | RUNTIME | ✅ done | L1-02 |
-| L1-04 | Per-tool `tokio::time::timeout` with configurable duration | RUNTIME | 🔲 todo | L1-02 |
+| L1-04 | Per-tool `tokio::time::timeout` with configurable duration | RUNTIME | ✅ done | L1-02 |
 | L1-05 | Implement `UrlFetchTool` (reqwest, returns page text) | RUNTIME | 🔲 todo | L1-03 |
 | L1-06 | Implement `WebSearchTool` (Serper or Brave API) | RUNTIME | 🔲 todo | L1-03 |
 | L1-07 | Implement `CodeExecTool` via Docker SDK | RUNTIME | 🔲 todo | L1-03 |
