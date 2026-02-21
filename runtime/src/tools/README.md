@@ -9,7 +9,7 @@ This directory contains the `Tool` trait definition and all tool implementations
 | `mock_echo` | ✓ Implemented | Test tool that echoes input (L1-01) |
 | `url_fetch` | ✓ Implemented | Fetches URL content via reqwest (L1-05) |
 | `web_search` | ✓ Implemented | Searches via Serper API (L1-06) |
-| `code_exec` | ⏳ Planned | Executes code in Docker sandbox (L1-07) |
+| `code_exec` | ✓ Implemented | Executes code in Docker sandbox (L1-07) |
 
 ## Tool Registry (L1-02)
 
@@ -205,6 +205,106 @@ async fn test_tool_completes_within_timeout() {
     assert!(result.is_ok());
 }
 ```
+
+## CodeExecTool Special Requirements
+
+The `code_exec` tool has additional prerequisites beyond standard tools due to its Docker dependency.
+
+### Docker Daemon Required
+
+CodeExecTool requires a running Docker daemon accessible via the default socket:
+- **Linux**: `/var/run/docker.sock`
+- **macOS**: Docker Desktop must be running
+- **Windows**: Docker Desktop with WSL2 backend
+
+The user running the runtime must have permission to access Docker (typically via the `docker` group on Linux).
+
+### Pre-pull Docker Images
+
+**Before first use**, pull required images to avoid timeout failures:
+
+```bash
+docker pull python:3.12-alpine
+docker pull node:22-alpine
+docker pull alpine:3.21
+```
+
+The tool does NOT auto-pull images to avoid unpredictable latency (image pulls can take 30+ seconds).
+
+If an image is missing, you'll see an error like:
+```
+Failed to create container: No such image: python:3.12-alpine
+```
+
+### Resource Limits
+
+Every code execution runs with strict resource constraints:
+
+| Limit | Value | Reason |
+|-------|-------|--------|
+| **Memory** | 128 MB | Prevents runaway allocations (OOM kill at ~128 MB) |
+| **Network** | Disabled | Code cannot make HTTP requests or access external services |
+| **Filesystem** | Read-only | Code cannot persist files between runs |
+| **Processes** | 64 max | Prevents fork bombs |
+
+### Timeout Behavior
+
+- **User-specified**: The `timeout_seconds` parameter (1-30s, default 10s) applies to code execution
+- **Registry timeout**: Acts as a hard cap (typically 60s by default)
+- **Timeout error**: Returns `ToolError::ExecutionFailed` with "exceeded timeout" message
+
+### Exit Codes
+
+CodeExecTool returns different exit codes to help the LLM understand what happened:
+
+| Exit Code | Meaning |
+|-----------|---------|
+| `0` | Success |
+| `1-255` | Language runtime error (e.g., Python exception, Node.js crash, bash error) |
+| `137` | **Memory limit exceeded (OOM kill)** - Returns error instead of normal result |
+| `-1` | Container status unknown (rare Docker API failure) |
+
+When code hits the 128 MB memory limit, Docker sends SIGKILL (exit code 137). CodeExecTool detects this and returns a clear error message: `"Code execution exceeded 128 MB memory limit (OOM kill)"`.
+
+### Supported Languages
+
+| Language | Image | Execution Command |
+|----------|-------|-------------------|
+| `python` | `python:3.12-alpine` | `python3 -c "<code>"` |
+| `javascript` | `node:22-alpine` | `node -e "<code>"` |
+| `bash` | `alpine:3.21` | `sh -c "<code>"` |
+
+Requesting an unsupported language returns:
+```
+Unsupported language 'ruby'. Supported: python, javascript, bash
+```
+
+### Example Usage
+
+```rust
+use xola_runtime::tools::{CodeExecTool, Tool};
+use serde_json::json;
+
+let tool = CodeExecTool;
+let input = json!({
+    "language": "python",
+    "code": "print('Hello from sandbox!')",
+    "timeout_seconds": 5
+});
+
+let result = tool.execute(input).await?;
+assert_eq!(result["exit_code"], 0);
+assert!(result["stdout"].as_str().unwrap().contains("Hello from sandbox!"));
+```
+
+### Security Guarantees
+
+- **Network isolation**: Containers cannot reach external networks (both `network_disabled: true` and `network_mode: "none"`)
+- **No host access**: No bind mounts giving access to host paths
+- **Memory cap**: Hard 128 MB limit enforced by Docker
+- **Process limits**: Max 64 processes to prevent fork bombs
+- **Read-only root**: Code cannot modify the container filesystem
+- **Ephemeral containers**: Every execution creates a fresh container, automatically cleaned up afterward
 
 ## Adding a New Tool
 

@@ -17,12 +17,14 @@ use bollard::container::LogOutput;
 use bollard::models::{ContainerCreateBody, HostConfig};
 use bollard::query_parameters::{
     CreateContainerOptions, LogsOptions, RemoveContainerOptions, StartContainerOptions,
-    WaitContainerOptions,
 };
 use bollard::Docker;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
+use std::time::Duration;
+use tokio::time::timeout;
 use tracing::{debug, warn};
+use uuid::Uuid;
 
 /// Maximum timeout the tool will honour regardless of what the caller requests.
 const MAX_TIMEOUT_SECONDS: i64 = 30;
@@ -32,6 +34,13 @@ const DEFAULT_TIMEOUT_SECONDS: i64 = 10;
 
 /// Memory limit applied to every container (128 MiB).
 const MEMORY_LIMIT_BYTES: i64 = 128 * 1024 * 1024;
+
+/// Exit code returned when container status cannot be determined.
+#[allow(dead_code)] // Reserved for future use if we need to return unknown status as normal result
+const EXIT_CODE_UNKNOWN: i64 = -1;
+
+/// Exit code indicating the container was killed by OOM (out of memory).
+const EXIT_CODE_OOM_KILLED: i64 = 137;
 
 /// Executes code in a sandboxed Docker container.
 ///
@@ -213,8 +222,10 @@ impl Tool for CodeExecTool {
             ..Default::default()
         };
 
+        // Use predictable naming for easier debugging and cleanup tracking
+        let container_name = format!("xola-code-exec-{}", Uuid::new_v4());
         let create_opts = CreateContainerOptions {
-            name: Some(String::new()),
+            name: Some(container_name.clone()),
             ..Default::default()
         };
 
@@ -226,7 +237,7 @@ impl Tool for CodeExecTool {
             })?;
 
         let container_id = container.id.clone();
-        debug!(container_id = %container_id, "Container created");
+        debug!(container_name, container_id = %container_id, "Container created");
 
         // -------------------------------------------------------------------
         // 5. Start container, collect output, always clean up
@@ -257,11 +268,26 @@ impl Tool for CodeExecTool {
 // Internal: start → stream logs → wait for exit
 // ---------------------------------------------------------------------------
 
+/// Runs container with timeout enforcement.
 async fn run_container(
     docker: &Docker,
     container_id: &str,
-    _timeout_seconds: i64,
+    timeout_seconds: i64,
 ) -> Result<Value, ToolError> {
+    let timeout_duration = Duration::from_secs(timeout_seconds as u64);
+
+    // Wrap execution with timeout
+    match timeout(timeout_duration, run_container_inner(docker, container_id)).await {
+        Ok(result) => result,
+        Err(_) => Err(ToolError::ExecutionFailed(format!(
+            "Container execution exceeded timeout of {}s",
+            timeout_seconds
+        ))),
+    }
+}
+
+/// Inner container execution logic (without timeout wrapper).
+async fn run_container_inner(docker: &Docker, container_id: &str) -> Result<Value, ToolError> {
     // Start
     docker
         .start_container(container_id, None::<StartContainerOptions>)
@@ -296,22 +322,30 @@ async fn run_container(
     }
 
     // Wait for exit and capture status code
-    let wait_opts = WaitContainerOptions {
-        condition: "not-running".to_string(),
-    };
+    // Note: After streaming logs with follow=true, the container has already exited.
+    // We inspect the container to get the final exit code.
+    let inspect_result = docker
+        .inspect_container(container_id, None)
+        .await
+        .map_err(|e| {
+            ToolError::ExecutionFailed(format!("Failed to inspect container: {}", e))
+        })?;
 
-    let mut wait_stream = docker.wait_container(container_id, Some(wait_opts));
-    let exit_code = if let Some(wait_result) = wait_stream.next().await {
-        match wait_result {
-            Ok(response) => response.status_code,
-            Err(e) => {
-                warn!(container_id, error = %e, "Error waiting for container exit");
-                -1
-            }
-        }
-    } else {
-        -1
-    };
+    let exit_code = inspect_result
+        .state
+        .and_then(|state| state.exit_code)
+        .unwrap_or(EXIT_CODE_UNKNOWN);
+
+    // Detect OOM kill (137 = SIGKILL, common for memory limit exceeded)
+    if exit_code == EXIT_CODE_OOM_KILLED {
+        warn!(
+            container_id,
+            exit_code, "Container killed (likely OOM)"
+        );
+        return Err(ToolError::ExecutionFailed(
+            "Code execution exceeded 128 MB memory limit (OOM kill)".to_string(),
+        ));
+    }
 
     debug!(container_id, exit_code, "Container exited");
 
@@ -550,5 +584,74 @@ mod tests {
             "stderr: {}",
             result["stderr"]
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_code_exec_real_timeout() {
+        let tool = CodeExecTool;
+        let input = json!({
+            "language": "python",
+            "code": "import time; time.sleep(60)",
+            "timeout_seconds": 2
+        });
+
+        let result = tool.execute(input).await;
+        assert!(result.is_err(), "Expected timeout error");
+        match result.unwrap_err() {
+            ToolError::ExecutionFailed(msg) => {
+                assert!(
+                    msg.contains("timeout") || msg.contains("exceeded"),
+                    "Expected timeout message, got: {}",
+                    msg
+                );
+            }
+            e => panic!("Expected ExecutionFailed with timeout, got: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_code_exec_real_oom() {
+        let tool = CodeExecTool;
+        let input = json!({
+            "language": "python",
+            "code": "x = [0] * (200 * 1024 * 1024)"  // Try to allocate 200 MB (> 128 MB limit)
+        });
+
+        let result = tool.execute(input).await;
+        assert!(result.is_err(), "Expected OOM error");
+        match result.unwrap_err() {
+            ToolError::ExecutionFailed(msg) => {
+                assert!(
+                    msg.to_lowercase().contains("memory") || msg.contains("OOM"),
+                    "Expected OOM/memory message, got: {}",
+                    msg
+                );
+            }
+            e => panic!("Expected ExecutionFailed with OOM, got: {:?}", e),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_code_exec_unsupported_language() {
+        let tool = CodeExecTool;
+        let input = json!({
+            "language": "ruby",
+            "code": "puts 'hello'"
+        });
+
+        let result = tool.execute(input).await;
+        assert!(result.is_err(), "Expected unsupported language error");
+        match result.unwrap_err() {
+            ToolError::ExecutionFailed(msg) => {
+                assert!(
+                    msg.contains("Unsupported"),
+                    "Expected 'Unsupported' in error"
+                );
+                assert!(msg.contains("ruby"), "Expected 'ruby' in error");
+            }
+            e => panic!("Expected ExecutionFailed, got: {:?}", e),
+        }
     }
 }
