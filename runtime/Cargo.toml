@@ -34,6 +34,19 @@ futures-util = "0.3"
 # UUID generation for container naming
 uuid = { version = "1.11", features = ["v4"] }
 
+# Async Postgres driver with compile-time query checking and migration runner (L2)
+sqlx = { version = "0.8", features = [
+    "runtime-tokio-native-tls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "macros",
+    "migrate",
+] }
+
+# Timestamp support for memory / episode records
+chrono = { version = "0.4", features = ["serde"] }
+
 # Structured logging and tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }

@@ -110,7 +110,7 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 
 | ID | Task | Role | Status | Blocker |
 |----|------|------|--------|---------|
-| L2-01 | Postgres schema: `memories`, `episodes` tables | INTEGRATION | 🔲 todo | — |
+| L2-01 | Postgres schema: `memories`, `episodes` tables | INTEGRATION | ✅ done | — |
 | L2-02 | pgvector extension and `embedding` column on `memories` | INTEGRATION | 🔲 todo | L2-01 |
 | L2-03 | `ShortTermMemory`: VecDeque with token budget; push evicts oldest | RUNTIME | 🔲 todo | — |
 | L2-04 | `LongTermMemory`: write embedding + metadata; semantic query via pgvector | RUNTIME | 🔲 todo | L2-02 |

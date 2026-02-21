@@ -143,10 +143,10 @@ Use `uv` for all dependency management. Do not use pip directly.
 
 ```bash
 # 1. Start Postgres with pgvector
-docker compose up -d postgres
+docker compose -f docker/docker-compose.yml up -d postgres
 
-# 2. Run migrations
-cd runtime && cargo sqlx migrate run
+# 2. Run migrations (run from runtime/, source points up to repo-root migrations/)
+cd runtime && cargo sqlx migrate run --source ../migrations --database-url postgres://xola:xola@localhost:5432/xola
 
 # 3. Start the Python IPC server
 cd llm_surface && uv run uvicorn llm_surface.server:app --uds /tmp/agent.sock
