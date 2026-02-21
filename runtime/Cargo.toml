@@ -21,6 +21,9 @@ thiserror = "2.0"
 # JSON Schema validation for tool inputs
 jsonschema = "0.26"
 
+# HTTP client for URL fetching
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+
 # Structured logging and tracing
 tracing = "0.1"
 

@@ -7,7 +7,7 @@ This directory contains the `Tool` trait definition and all tool implementations
 | Tool Name | Status | Description |
 |-----------|--------|-------------|
 | `mock_echo` | ✓ Implemented | Test tool that echoes input (L1-01) |
-| `url_fetch` | ⏳ Planned | Fetches URL content via reqwest (L1-05) |
+| `url_fetch` | ✓ Implemented | Fetches URL content via reqwest (L1-05) |
 | `web_search` | ⏳ Planned | Searches via Serper/Brave API (L1-06) |
 | `code_exec` | ⏳ Planned | Executes code in Docker sandbox (L1-07) |
 

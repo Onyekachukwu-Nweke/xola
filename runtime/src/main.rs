@@ -12,7 +12,7 @@ mod tools;
 async fn main() {
     use serde_json::json;
     use std::sync::Arc;
-    use tools::{mock::MockTool, ToolRegistry, ToolTimeoutConfig};
+    use tools::{mock::MockTool, ToolRegistry, ToolTimeoutConfig, UrlFetchTool};
 
     println!("Xola runtime initializing...");
     println!("L1-01: Tool trait defined ✓");
@@ -25,6 +25,9 @@ async fn main() {
     registry
         .register(Arc::new(MockTool))
         .expect("Failed to register mock tool");
+    registry
+        .register(Arc::new(UrlFetchTool))
+        .expect("Failed to register url_fetch tool");
 
     println!("\nRegistered tools: {:?}", registry.list_names());
 
