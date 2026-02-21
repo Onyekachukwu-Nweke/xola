@@ -10,6 +10,14 @@ mod tools;
 
 #[tokio::main]
 async fn main() {
+    // Initialize tracing subscriber (stdout formatter for now; OTel in L5-02)
+    tracing_subscriber::fmt()
+        .with_target(false)
+        .with_thread_ids(false)
+        .with_file(true)
+        .with_line_number(true)
+        .init();
+
     use serde_json::json;
     use std::sync::Arc;
     use tools::{
@@ -82,7 +90,7 @@ async fn main() {
     }
 
     // Placeholder - will be expanded in future tasks:
-    // - L1-08: Execution trace logging
+    // - L1-08: Execution trace logging ✓ (implemented)
     // - L2-03+: Memory subsystem
     // - L3-01+: Planning layer
     // - L4-01+: Reliability layer (circuit breakers)

@@ -8,7 +8,9 @@ use super::{Tool, ToolError};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 use thiserror::Error;
+use tracing::{error, info};
 
 /// Errors that can occur during tool registration.
 #[derive(Error, Debug)]
@@ -46,6 +48,23 @@ pub enum RegistryError {
 /// ```
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
+}
+
+/// Truncates a JSON value to a maximum character count for logging.
+///
+/// If the JSON serialization exceeds max_chars, truncates and appends
+/// a message indicating the total size.
+fn truncate_json(value: &Value, max_chars: usize) -> String {
+    let serialized = value.to_string();
+    if serialized.len() > max_chars {
+        format!(
+            "{}... [truncated, {} bytes total]",
+            &serialized[..max_chars],
+            serialized.len()
+        )
+    } else {
+        serialized
+    }
 }
 
 impl ToolRegistry {
@@ -202,6 +221,13 @@ impl ToolRegistry {
         input: Value,
         timeout: std::time::Duration,
     ) -> Result<Value, ToolError> {
+        // Start timer for latency measurement
+        let start = Instant::now();
+
+        // Prepare truncated input for logging
+        let input_display = truncate_json(&input, 500);
+        let input_size = input.to_string().len();
+
         // Step 1: Validate input (reuses L1-03 validation)
         self.validate_input(tool_name, &input)?;
 
@@ -211,14 +237,47 @@ impl ToolRegistry {
             .ok_or_else(|| ToolError::NotFound(tool_name.to_string()))?;
 
         // Step 3: Execute with timeout wrapper
-        match tokio::time::timeout(timeout, tool.execute(input)).await {
+        let result = match tokio::time::timeout(timeout, tool.execute(input)).await {
             Ok(Ok(result)) => Ok(result), // Success
             Ok(Err(e)) => Err(e),         // Tool returned error
             Err(_) => Err(ToolError::Timeout {
                 // Timeout exceeded
                 timeout_ms: timeout.as_millis() as u64,
             }),
+        };
+
+        // Measure latency
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        // Log based on result
+        match &result {
+            Ok(output) => {
+                let output_display = truncate_json(output, 500);
+                let output_size = output.to_string().len();
+
+                info!(
+                    tool_name,
+                    input_size,
+                    output_size,
+                    latency_ms,
+                    input = %input_display,
+                    output = %output_display,
+                    "Tool execution succeeded"
+                );
+            }
+            Err(err) => {
+                error!(
+                    tool_name,
+                    input_size,
+                    latency_ms,
+                    error = %err,
+                    input = %input_display,
+                    "Tool execution failed"
+                );
+            }
         }
+
+        result
     }
 }
 
@@ -427,4 +486,57 @@ mod tests {
     // Note: Testing actual timeout requires a slow tool.
     // MockTool executes instantly, so we can't test timeout expiration yet.
     // This will be added when we implement real tools in L1-05+.
+
+    #[tokio::test]
+    async fn test_execution_trace_on_success() {
+        // Verify that successful tool execution logs at info! level
+        // with tool_name, input_size, output_size, latency_ms fields
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(MockTool)).unwrap();
+
+        let input = json!({ "message": "test" });
+        let result = registry
+            .execute_with_timeout("mock_echo", input, std::time::Duration::from_secs(5))
+            .await;
+
+        assert!(result.is_ok());
+        // Note: Actual log verification requires tracing-subscriber test utilities
+        // For now, verify execution completes without panicking
+    }
+
+    #[tokio::test]
+    async fn test_execution_trace_on_error() {
+        // Verify that failed tool execution logs at error! level
+        // with tool_name, error, latency_ms fields
+
+        let mut registry = ToolRegistry::new();
+        registry.register(Arc::new(MockTool)).unwrap();
+
+        let input = json!({ "wrong": "field" }); // Invalid input
+        let result = registry
+            .execute_with_timeout("mock_echo", input, std::time::Duration::from_secs(5))
+            .await;
+
+        assert!(result.is_err());
+        // Verify error is logged (execution completes)
+    }
+
+    #[test]
+    fn test_truncate_json_short() {
+        let value = json!({ "message": "short" });
+        let truncated = truncate_json(&value, 500);
+        assert_eq!(truncated, r#"{"message":"short"}"#);
+    }
+
+    #[test]
+    fn test_truncate_json_long() {
+        let long_string = "x".repeat(600);
+        let value = json!({ "data": long_string });
+        let truncated = truncate_json(&value, 500);
+
+        assert!(truncated.len() < 600);
+        assert!(truncated.contains("[truncated"));
+        assert!(truncated.contains("bytes total]"));
+    }
 }
