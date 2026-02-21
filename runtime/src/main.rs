@@ -1,4 +1,4 @@
-//! Xola Agent Runtime
+//! Xola Agent Runtime Binary
 //!
 //! A two-process AI agent runtime built in Rust and Python.
 //! This is the Rust side - handling tool dispatch, memory, planning,
@@ -6,7 +6,7 @@
 //!
 //! See CLAUDE.md and docs/ for architecture and design rationale.
 
-mod tools;
+use xola_runtime::tools;
 
 #[tokio::main]
 async fn main() {
@@ -91,6 +91,7 @@ async fn main() {
 
     // Placeholder - will be expanded in future tasks:
     // - L1-08: Execution trace logging ✓ (implemented)
+    // - L1-09: Integration tests ✓ (tests/tool_integration.rs)
     // - L2-03+: Memory subsystem
     // - L3-01+: Planning layer
     // - L4-01+: Reliability layer (circuit breakers)
