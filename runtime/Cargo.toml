@@ -47,6 +47,9 @@ sqlx = { version = "0.8", features = [
 # Timestamp support for memory / episode records
 chrono = { version = "0.4", features = ["serde"] }
 
+# pgvector Vector type — maps Vec<f32> to Postgres vector columns (L2-04)
+pgvector = { version = "0.4", features = ["sqlx"] }
+
 # Structured logging and tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt"] }

@@ -113,7 +113,7 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 | L2-01 | Postgres schema: `memories`, `episodes` tables | INTEGRATION | ✅ done | — |
 | L2-02 | pgvector extension and `embedding` column on `memories` | INTEGRATION | ✅ done | L2-01 |
 | L2-03 | `ShortTermMemory`: VecDeque with token budget; push evicts oldest | RUNTIME | ✅ done | — |
-| L2-04 | `LongTermMemory`: write embedding + metadata; semantic query via pgvector | RUNTIME | 🔲 todo | L2-02 |
+| L2-04 | `LongTermMemory`: write embedding + metadata; semantic query via pgvector | RUNTIME | ✅ done | L2-02 |
 | L2-05 | `EpisodicLog`: structured insert per task completion | RUNTIME | 🔲 todo | L2-01 |
 | L2-06 | `/embed` endpoint: accepts text, returns `Vec<f32>` | LLM_SURFACE | 🔲 todo | — |
 | L2-07 | tiktoken budget helper: `count_tokens(text: str, model: str) -> int` | LLM_SURFACE | 🔲 todo | — |
