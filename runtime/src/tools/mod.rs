@@ -19,6 +19,7 @@ pub mod registry;
 pub mod timeout_config;
 pub mod url_fetch;
 pub mod validator;
+pub mod web_search;
 
 // Re-export registry types for convenient access
 #[allow(unused_imports)] // RegistryError not yet used - will be used in future tasks
@@ -27,6 +28,7 @@ pub use timeout_config::ToolTimeoutConfig;
 pub use url_fetch::UrlFetchTool;
 #[allow(unused_imports)] // InputValidator not yet used directly - used via ToolRegistry
 pub use validator::InputValidator;
+pub use web_search::WebSearchTool;
 
 /// Errors that can occur during tool execution.
 ///

@@ -182,7 +182,11 @@ mod tests {
         let output = result.unwrap();
         assert!(output["content"].is_string());
         assert_eq!(output["status_code"], 200);
-        assert!(output["content_length"].as_u64().unwrap() > 0);
+        // content_length may be 0 for HTTP/2 responses with chunked encoding
+        assert!(output["content_length"].is_number());
+        // Verify we actually got content
+        let content = output["content"].as_str().unwrap();
+        assert!(content.contains("Example Domain"));
     }
 
     // Test non-2xx status handling
