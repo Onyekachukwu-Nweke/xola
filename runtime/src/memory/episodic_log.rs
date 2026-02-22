@@ -205,10 +205,23 @@ impl EpisodicLog {
 
         let records = rows
             .into_iter()
-            .map(|row| map_episode_row(RawEpisodeRow { id: row.id, task_goal: row.task_goal, steps: row.steps, outcome: row.outcome, error: row.error, duration_ms: row.duration_ms, created_at: row.created_at }))
+            .map(|row| {
+                map_episode_row(RawEpisodeRow {
+                    id: row.id,
+                    task_goal: row.task_goal,
+                    steps: row.steps,
+                    outcome: row.outcome,
+                    error: row.error,
+                    duration_ms: row.duration_ms,
+                    created_at: row.created_at,
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
-        tracing::debug!(count = records.len(), "episodic_log: fetched recent episodes");
+        tracing::debug!(
+            count = records.len(),
+            "episodic_log: fetched recent episodes"
+        );
         Ok(records)
     }
 
@@ -255,7 +268,17 @@ impl EpisodicLog {
 
         let records = rows
             .into_iter()
-            .map(|row| map_episode_row(RawEpisodeRow { id: row.id, task_goal: row.task_goal, steps: row.steps, outcome: row.outcome, error: row.error, duration_ms: row.duration_ms, created_at: row.created_at }))
+            .map(|row| {
+                map_episode_row(RawEpisodeRow {
+                    id: row.id,
+                    task_goal: row.task_goal,
+                    steps: row.steps,
+                    outcome: row.outcome,
+                    error: row.error,
+                    duration_ms: row.duration_ms,
+                    created_at: row.created_at,
+                })
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         tracing::debug!(
@@ -277,7 +300,6 @@ impl EpisodicLog {
         tracing::debug!(%id, deleted, "episodic_log: deleted episode");
         Ok(deleted)
     }
-
 }
 
 // -------------------------------------------------------------------------
@@ -361,7 +383,10 @@ mod tests {
     fn task_step_serializes_without_error_field_when_none() {
         let step = TaskStep::success("tool", json!(null));
         let s = serde_json::to_string(&step).unwrap();
-        assert!(!s.contains("error"), "error field should be skipped when None");
+        assert!(
+            !s.contains("error"),
+            "error field should be skipped when None"
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -397,7 +422,10 @@ mod tests {
             .expect("insert failed");
 
         let recent = log.recent(5).await.expect("recent failed");
-        let ep = recent.iter().find(|e| e.id == id).expect("episode not found in recent");
+        let ep = recent
+            .iter()
+            .find(|e| e.id == id)
+            .expect("episode not found in recent");
 
         assert_eq!(ep.task_goal, "fetch and summarise the Rust blog");
         assert_eq!(ep.outcome, Outcome::Success);
@@ -454,7 +482,10 @@ mod tests {
             .await
             .expect("find_similar_goals failed");
 
-        assert!(matches.iter().any(|e| e.id == id), "should find the inserted episode");
+        assert!(
+            matches.iter().any(|e| e.id == id),
+            "should find the inserted episode"
+        );
 
         cleanup(&log, id).await;
     }

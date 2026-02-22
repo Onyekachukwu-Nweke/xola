@@ -118,7 +118,7 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 | L2-06 | `/embed` endpoint: accepts text, returns `Vec<f32>` | LLM_SURFACE | ✅ done | — |
 | L2-07 | tiktoken budget helper: `count_tokens(text: str, model: str) -> int` | LLM_SURFACE | ✅ done | — |
 | L2-08 | Summarization fallback when short-term buffer fills | LLM_SURFACE | ✅ done | L2-07 |
-| L2-09 | Integration test: store and retrieve a memory by semantic similarity | INTEGRATION | ✅ done | L2-04, L2-06 |
+| L2-09 | Integration test: store and retrieve a memory by semantic similarity — implemented in `runtime/src/memory/long_term.rs` (RUNTIME_AGENT; requires `LongTermMemory` internals and `sqlx::query!`; see note below) | INTEGRATION | ✅ done | L2-04, L2-06 |
 
 ### Layer 3: Task Planning & Orchestration
 

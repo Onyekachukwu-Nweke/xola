@@ -69,7 +69,10 @@ impl LongTermMemory {
     /// recall and latency for an IVFFlat index built with `lists = 100`.
     /// Tune with [`with_probes`][Self::with_probes] if needed.
     pub fn new(pool: PgPool) -> Self {
-        Self { pool, ivfflat_probes: 10 }
+        Self {
+            pool,
+            ivfflat_probes: 10,
+        }
     }
 
     /// Override the IVFFlat probe count for this instance.
@@ -304,19 +307,24 @@ mod tests {
         let embedding_b = fake_embedding_b();
 
         let id_a = mem
-            .store("memory A", embedding_a.clone(), serde_json::json!({"tag": "a"}))
+            .store(
+                "memory A",
+                embedding_a.clone(),
+                serde_json::json!({"tag": "a"}),
+            )
             .await
             .expect("store A failed");
         let id_b = mem
-            .store("memory B", embedding_b.clone(), serde_json::json!({"tag": "b"}))
+            .store(
+                "memory B",
+                embedding_b.clone(),
+                serde_json::json!({"tag": "b"}),
+            )
             .await
             .expect("store B failed");
 
         // Query with a vector identical to A — it must come back first.
-        let results = mem
-            .query(embedding_a, 2)
-            .await
-            .expect("query failed");
+        let results = mem.query(embedding_a, 2).await.expect("query failed");
 
         assert!(!results.is_empty(), "expected at least one result");
         assert_eq!(results[0].id, id_a, "closest result should be A");
@@ -377,10 +385,7 @@ mod tests {
             .await
             .expect("store failed");
 
-        let results = mem
-            .query(embedding, 1)
-            .await
-            .expect("query failed");
+        let results = mem.query(embedding, 1).await.expect("query failed");
         assert_eq!(results[0].id, id, "expected the just-stored row back");
         assert_eq!(results[0].metadata["source"], "test");
 
@@ -400,28 +405,44 @@ mod tests {
     //   cargo test semantic_similarity_retrieves_related_memory_first -- --ignored
     // ---------------------------------------------------------------------------
 
-    /// Internal request body for `POST /embed`.
+    // Tags used to namespace test rows in L2-09. Defined as constants so the
+    // pre-test cleanup and the store calls always refer to the same strings.
+    const TAG_PARIS: &str = "l2_09_eiffel";
+    const TAG_BIO: &str = "l2_09_bio";
+
+    /// Internal request body for `POST /embed` — matches the IPC contract in AGENTS.md.
     #[derive(serde::Serialize)]
     struct EmbedRequest {
         text: String,
+        /// Model name; mirrors the `model` field the Rust runtime will send.
+        model: String,
     }
 
-    /// Internal response body from `POST /embed`.
+    /// Internal response body from `POST /embed` — matches the IPC contract in AGENTS.md.
     #[derive(serde::Deserialize)]
     struct EmbedResponse {
         vector: Vec<f32>,
+        token_count: u32,
     }
 
     /// Fetch a real 1536-dim embedding from the Python IPC server.
     ///
-    /// Panics if the server is unreachable or returns a non-2xx status — this
-    /// immediately fails the test in a readable way.
+    /// Sends the full IPC request shape (text + model) and asserts the full
+    /// response shape (vector + token_count > 0). Panics on any failure so
+    /// the test fails immediately with a clear message.
     async fn fetch_embedding(llm_url: &str, text: &str) -> Vec<f32> {
-        let client = reqwest::Client::new();
+        // 10-second timeout: fails fast if the Python server is unresponsive
+        // rather than hanging the test runner indefinitely.
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .build()
+            .expect("failed to build HTTP client");
+
         let resp = client
             .post(format!("{}/embed", llm_url))
             .json(&EmbedRequest {
                 text: text.to_owned(),
+                model: "text-embedding-3-small".to_owned(),
             })
             .send()
             .await
@@ -429,10 +450,18 @@ mod tests {
             .error_for_status()
             .unwrap_or_else(|e| panic!("/embed returned error status: {e}"));
 
-        resp.json::<EmbedResponse>()
+        let body = resp
+            .json::<EmbedResponse>()
             .await
-            .expect("failed to parse /embed JSON response")
-            .vector
+            .expect("failed to parse /embed JSON response");
+
+        assert!(
+            body.token_count > 0,
+            "IPC contract violation: token_count must be > 0, got {}",
+            body.token_count
+        );
+
+        body.vector
     }
 
     /// L2-09: end-to-end semantic similarity test.
@@ -459,7 +488,7 @@ mod tests {
         let mem = LongTermMemory::new(pool).with_probes(100);
         // Remove any rows from previous failed runs so stale embeddings cannot
         // interfere with cosine distance ordering.
-        for tag in ["l2_09_eiffel", "l2_09_bio"] {
+        for tag in [TAG_PARIS, TAG_BIO] {
             sqlx::query!(
                 "DELETE FROM memories WHERE metadata->>'l2_09_tag' = $1",
                 tag
@@ -481,11 +510,15 @@ mod tests {
 
         // ── Store both memories ───────────────────────────────────────────────
         let id_paris = mem
-            .store(text_paris, v_paris, serde_json::json!({"l2_09_tag": "l2_09_eiffel"}))
+            .store(
+                text_paris,
+                v_paris,
+                serde_json::json!({"l2_09_tag": TAG_PARIS}),
+            )
             .await
             .expect("store paris failed");
         let id_bio = mem
-            .store(text_bio, v_bio, serde_json::json!({"l2_09_tag": "l2_09_bio"}))
+            .store(text_bio, v_bio, serde_json::json!({"l2_09_tag": TAG_BIO}))
             .await
             .expect("store bio failed");
 

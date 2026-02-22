@@ -41,5 +41,7 @@ pub async fn connect_db() -> PgPool {
          Copy .env.example → .env and start Postgres with: \
          docker compose -f docker/docker-compose.yml up -d postgres",
     );
-    PgPool::connect(&url).await.expect("failed to connect to Postgres")
+    PgPool::connect(&url)
+        .await
+        .expect("failed to connect to Postgres")
 }
