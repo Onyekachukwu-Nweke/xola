@@ -30,6 +30,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
+
 from llm_surface.embeddings import EMBEDDING_MODEL, count_tokens, embed_text
 from llm_surface.server import app
 
@@ -39,20 +40,6 @@ from llm_surface.server import app
 
 FAKE_DIM = 1536
 FAKE_VECTOR: list[float] = [0.5] * FAKE_DIM
-
-
-@pytest.fixture(autouse=True)
-def _mock_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Ensure OPENAI_API_KEY is set so the server lifespan can initialise.
-
-    Only injects a dummy sentinel when the variable is absent (i.e. no .env
-    was found). When conftest.py has already loaded the real key from .env,
-    this is a no-op — leaving integration tests free to use the genuine key.
-    """
-    import os
-
-    if not os.environ.get("OPENAI_API_KEY"):
-        monkeypatch.setenv("OPENAI_API_KEY", "test-sk-not-real")
 
 
 def _mock_openai(vector: list[float] = FAKE_VECTOR) -> AsyncMock:
