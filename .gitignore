@@ -1,7 +1,36 @@
 # Rust / Cargo
 runtime/target/
+runtime/bin/
 **/*.rs.bk
 Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.venv/
+venv/
+.env
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+
+# Tooling
+.mypy_cache/
+.ruff_cache/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
 
 # IDE
 .vscode/
