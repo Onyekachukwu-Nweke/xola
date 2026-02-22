@@ -8,3 +8,6 @@
 
 pub mod memory;
 pub mod tools;
+
+#[cfg(test)]
+pub mod test_support;

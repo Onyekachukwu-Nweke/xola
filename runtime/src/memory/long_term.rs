@@ -27,10 +27,13 @@ pub enum MemoryError {
 }
 
 /// Expected embedding dimensionality (text-embedding-3-small default).
+///
+/// TODO: load from runtime config (config/local.toml) so this and the
+/// migration `vector(1536)` column stay in sync when the model changes.
 const EMBEDDING_DIM: usize = 1536;
 
 /// A memory record returned from a semantic similarity query.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct MemoryRecord {
     pub id: Uuid,
     pub content: String,
@@ -107,7 +110,8 @@ impl LongTermMemory {
     ///
     /// # Parameters
     /// - `embedding` – 1536-dim query vector from `POST /embed`
-    /// - `top_k` – maximum number of results to return
+    /// - `top_k` – maximum number of results to return. Passing `0` returns
+    ///   an empty `Vec` immediately (no database round-trip).
     ///
     /// # Errors
     /// Returns [`MemoryError::DimensionMismatch`] if `embedding.len() != 1536`.
@@ -116,6 +120,8 @@ impl LongTermMemory {
         embedding: Vec<f32>,
         top_k: usize,
     ) -> Result<Vec<MemoryRecord>, MemoryError> {
+        debug_assert!(top_k > 0, "top_k must be > 0; passing 0 returns nothing");
+
         if embedding.len() != EMBEDDING_DIM {
             return Err(MemoryError::DimensionMismatch(embedding.len()));
         }
@@ -141,7 +147,7 @@ impl LongTermMemory {
         .fetch_all(&self.pool)
         .await?;
 
-        let records = rows
+        let records: Vec<MemoryRecord> = rows
             .into_iter()
             .map(|row| MemoryRecord {
                 id: row.id,
@@ -154,6 +160,7 @@ impl LongTermMemory {
 
         tracing::debug!(
             top_k,
+            results = records.len(),
             "long_term_memory: queried semantic memories"
         );
         Ok(records)
@@ -183,10 +190,36 @@ impl LongTermMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::connect_db;
 
-    /// Fake 1536-dim vector filled with a constant value.
-    fn fake_embedding(val: f32) -> Vec<f32> {
-        vec![val; EMBEDDING_DIM]
+    /// A 1536-dim unit-ish vector pointing along the "first half" axis.
+    /// Orthogonal to `fake_embedding_b()` — cosine distance between them is 1.0.
+    fn fake_embedding_a() -> Vec<f32> {
+        let mut v = vec![0.0f32; EMBEDDING_DIM];
+        for x in v.iter_mut().take(EMBEDDING_DIM / 2) {
+            *x = 1.0;
+        }
+        v
+    }
+
+    /// A 1536-dim unit-ish vector pointing along the "second half" axis.
+    /// Orthogonal to `fake_embedding_a()` — cosine distance between them is 1.0.
+    fn fake_embedding_b() -> Vec<f32> {
+        let mut v = vec![0.0f32; EMBEDDING_DIM];
+        for x in v.iter_mut().skip(EMBEDDING_DIM / 2) {
+            *x = 1.0;
+        }
+        v
+    }
+
+    /// A 1536-dim vector pointing along the "first quarter" axis.
+    /// Distinct from both `a` and `b` above.
+    fn fake_embedding_c() -> Vec<f32> {
+        let mut v = vec![0.0f32; EMBEDDING_DIM];
+        for x in v.iter_mut().take(EMBEDDING_DIM / 4) {
+            *x = 1.0;
+        }
+        v
     }
 
     // ---------------------------------------------------------------------------
@@ -196,7 +229,7 @@ mod tests {
     #[test]
     fn dimension_check_exact_passes() {
         // The guard logic itself is pure — just verify the constant
-        assert_eq!(fake_embedding(0.1).len(), EMBEDDING_DIM);
+        assert_eq!(fake_embedding_a().len(), EMBEDDING_DIM);
     }
 
     #[test]
@@ -211,49 +244,61 @@ mod tests {
     // Run with: cargo test -- --ignored
     // ---------------------------------------------------------------------------
 
-    async fn connect() -> PgPool {
-        let url = std::env::var("DATABASE_URL")
-            .expect("DATABASE_URL must be set for integration tests");
-        PgPool::connect(&url).await.expect("failed to connect")
-    }
-
     #[tokio::test]
     #[ignore]
     async fn store_and_query_returns_closest_memory() {
-        let pool = connect().await;
+        let pool = connect_db().await;
         let mem = LongTermMemory::new(pool);
 
-        let embedding_a = fake_embedding(0.1);
-        let embedding_b = fake_embedding(0.9);
+        // Pre-test cleanup: wipe any stale rows left by previous failed runs.
+        // Orphaned rows in the same embedding direction corrupt cosine search results.
+        for tag in ["a", "b"] {
+            sqlx::query!("DELETE FROM memories WHERE metadata->>'tag' = $1", tag)
+                .execute(mem.pool())
+                .await
+                .expect("pre-test cleanup failed");
+        }
+
+        // Use orthogonal embeddings so cosine distance is meaningful.
+        // fake_embedding_a and fake_embedding_b are unit vectors on different
+        // axes — cosine distance between them is 1.0, distance to themselves is 0.0.
+        let embedding_a = fake_embedding_a();
+        let embedding_b = fake_embedding_b();
 
         let id_a = mem
             .store("memory A", embedding_a.clone(), serde_json::json!({"tag": "a"}))
             .await
             .expect("store A failed");
-        let _id_b = mem
+        let id_b = mem
             .store("memory B", embedding_b.clone(), serde_json::json!({"tag": "b"}))
             .await
             .expect("store B failed");
 
-        // Query with a vector very close to A
+        // Query with a vector identical to A — it must come back first.
         let results = mem
             .query(embedding_a, 2)
             .await
             .expect("query failed");
 
-        assert!(!results.is_empty());
-        // Closest result should be A
-        assert_eq!(results[0].id, id_a);
-        assert!(results[0].distance < results[1].distance);
+        assert!(!results.is_empty(), "expected at least one result");
+        assert_eq!(results[0].id, id_a, "closest result should be A");
+        // Cosine distance from A to itself must be essentially 0.
+        // (IVFFlat with few rows may not return top_k rows, so we don't index [1].)
+        assert!(
+            results[0].distance < 0.01,
+            "self-similarity distance should be ~0, got {}",
+            results[0].distance
+        );
 
-        // cleanup
-        mem.delete(id_a).await.expect("delete failed");
+        // Cleanup — both rows to avoid polluting future runs.
+        mem.delete(id_a).await.expect("delete id_a failed");
+        mem.delete(id_b).await.expect("delete id_b failed");
     }
 
     #[tokio::test]
     #[ignore]
     async fn delete_nonexistent_returns_false() {
-        let pool = connect().await;
+        let pool = connect_db().await;
         let mem = LongTermMemory::new(pool);
         let fake_id = Uuid::new_v4();
         let deleted = mem.delete(fake_id).await.expect("delete call failed");
@@ -263,7 +308,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn store_wrong_dimension_returns_error() {
-        let pool = connect().await;
+        let pool = connect_db().await;
         let mem = LongTermMemory::new(pool);
         let result = mem
             .store("bad", vec![0.1_f32; 512], serde_json::json!({}))
@@ -274,7 +319,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn query_wrong_dimension_returns_error() {
-        let pool = connect().await;
+        let pool = connect_db().await;
         let mem = LongTermMemory::new(pool);
         let result = mem.query(vec![0.0_f32; 10], 5).await;
         assert!(matches!(result, Err(MemoryError::DimensionMismatch(10))));
@@ -283,16 +328,22 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn metadata_roundtrips() {
-        let pool = connect().await;
+        let pool = connect_db().await;
         let mem = LongTermMemory::new(pool);
+        // Use a unique directional embedding (c-axis) to avoid cosine-distance
+        // ties with stale rows from other tests.
+        let embedding = fake_embedding_c();
         let meta = serde_json::json!({"source": "test", "score": 0.95});
         let id = mem
-            .store("metadata test", fake_embedding(0.5), meta.clone())
+            .store("metadata test", embedding.clone(), meta.clone())
             .await
             .expect("store failed");
 
-        let results = mem.query(fake_embedding(0.5), 1).await.expect("query failed");
-        assert_eq!(results[0].id, id);
+        let results = mem
+            .query(embedding, 1)
+            .await
+            .expect("query failed");
+        assert_eq!(results[0].id, id, "expected the just-stored row back");
         assert_eq!(results[0].metadata["source"], "test");
 
         mem.delete(id).await.expect("cleanup failed");

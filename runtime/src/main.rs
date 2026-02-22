@@ -10,6 +10,11 @@ use xola_runtime::tools;
 
 #[tokio::main]
 async fn main() {
+    // Load .env for local development. In production, environment variables
+    // are injected directly (Docker --env-file, systemd, Kubernetes secrets),
+    // so .ok() ensures this is a no-op when no .env file is present.
+    dotenvy::dotenv().ok();
+
     // Initialize tracing subscriber (stdout formatter for now; OTel in L5-02)
     tracing_subscriber::fmt()
         .with_target(false)
