@@ -115,7 +115,7 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 | L2-03 | `ShortTermMemory`: VecDeque with token budget; push evicts oldest | RUNTIME | ✅ done | — |
 | L2-04 | `LongTermMemory`: write embedding + metadata; semantic query via pgvector | RUNTIME | ✅ done | L2-02 |
 | L2-05 | `EpisodicLog`: structured insert per task completion | RUNTIME | ✅ done | L2-01 |
-| L2-06 | `/embed` endpoint: accepts text, returns `Vec<f32>` | LLM_SURFACE | 🔲 todo | — |
+| L2-06 | `/embed` endpoint: accepts text, returns `Vec<f32>` | LLM_SURFACE | ✅ done | — |
 | L2-07 | tiktoken budget helper: `count_tokens(text: str, model: str) -> int` | LLM_SURFACE | 🔲 todo | — |
 | L2-08 | Summarization fallback when short-term buffer fills | LLM_SURFACE | 🔲 todo | L2-07 |
 | L2-09 | Integration test: store and retrieve a memory by semantic similarity | INTEGRATION | 🔲 todo | L2-04, L2-06 |

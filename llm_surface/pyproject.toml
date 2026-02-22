@@ -1,0 +1,61 @@
+[project]
+name = "llm-surface"
+version = "0.1.0"
+description = "Python IPC surface for the Xola agent runtime — LLM calls, embeddings, token counting."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "openai>=1.65",
+    "pydantic>=2.10",
+    "httpx>=0.28",
+    # L2-07: token counting
+    "tiktoken>=0.9",
+    # Load repo-root .env locally (no-op when the var is already in the environment)
+    "python-dotenv>=1.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.25",
+    "pytest-mock>=3.14",
+    "mypy>=1.14",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# Standard src layout: source lives in src/llm_surface/.
+# setuptools auto-discovers the package via find_packages(where=["src"]).
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# ---------------------------------------------------------------------------
+# Ruff (linter + formatter)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "N"]
+
+# ---------------------------------------------------------------------------
+# Mypy (strict typing)
+# ---------------------------------------------------------------------------
+[tool.mypy]
+strict = true
+python_version = "3.11"
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: requires real OPENAI_API_KEY (deselect with -m 'not integration')",
+]
