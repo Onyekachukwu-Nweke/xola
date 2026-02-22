@@ -55,12 +55,30 @@ pub struct MemoryRecord {
 #[derive(Clone, Debug)]
 pub struct LongTermMemory {
     pool: PgPool,
+    /// Number of IVFFlat lists to probe on each `query` call.
+    ///
+    /// Higher values give better recall at the cost of latency.
+    /// Use [`with_probes`][Self::with_probes] to override the default.
+    ivfflat_probes: usize,
 }
 
 impl LongTermMemory {
     /// Create a new `LongTermMemory` backed by the given connection pool.
+    ///
+    /// Uses `ivfflat.probes = 10` by default — a practical balance between
+    /// recall and latency for an IVFFlat index built with `lists = 100`.
+    /// Tune with [`with_probes`][Self::with_probes] if needed.
     pub fn new(pool: PgPool) -> Self {
-        Self { pool }
+        Self { pool, ivfflat_probes: 10 }
+    }
+
+    /// Override the IVFFlat probe count for this instance.
+    ///
+    /// Setting `probes = lists` (e.g. 100) forces an exact scan and is useful
+    /// in tests where the index is sparse (few rows << many lists).
+    pub fn with_probes(mut self, probes: usize) -> Self {
+        self.ivfflat_probes = probes;
+        self
     }
 
     /// Store a memory.
@@ -108,6 +126,11 @@ impl LongTermMemory {
     /// Uses cosine distance (`<=>`) with the IVFFlat index created in
     /// migration 0001. Results are ordered closest-first.
     ///
+    /// IVFFlat probe count is controlled by the `ivfflat_probes` field
+    /// (set at construction time via [`with_probes`][Self::with_probes]).
+    /// A dedicated connection is acquired so the `SET ivfflat.probes`
+    /// command and the subsequent `SELECT` share the same session.
+    ///
     /// # Parameters
     /// - `embedding` – 1536-dim query vector from `POST /embed`
     /// - `top_k` – maximum number of results to return. Passing `0` returns
@@ -129,6 +152,19 @@ impl LongTermMemory {
         let vector = Vector::from(embedding);
         let limit = top_k as i64;
 
+        // Acquire a dedicated connection so that the `SET ivfflat.probes`
+        // command and the subsequent SELECT execute on the same session.
+        // The session-level setting persists for the lifetime of this
+        // checkout and is harmless to other checkouts.
+        let mut conn = self.pool.acquire().await?;
+
+        // Raise the number of IVFFlat lists probed. Default is 1 which yields
+        // very poor recall when the index is sparse (test datasets) or when a
+        // high recall SLA is required.
+        sqlx::query(&format!("SET ivfflat.probes = {}", self.ivfflat_probes))
+            .execute(&mut *conn)
+            .await?;
+
         let rows = sqlx::query!(
             r#"
             SELECT
@@ -144,7 +180,7 @@ impl LongTermMemory {
             vector as Vector,
             limit,
         )
-        .fetch_all(&self.pool)
+        .fetch_all(&mut *conn)
         .await?;
 
         let records: Vec<MemoryRecord> = rows
@@ -160,6 +196,7 @@ impl LongTermMemory {
 
         tracing::debug!(
             top_k,
+            probes = self.ivfflat_probes,
             results = records.len(),
             "long_term_memory: queried semantic memories"
         );
@@ -248,7 +285,8 @@ mod tests {
     #[ignore]
     async fn store_and_query_returns_closest_memory() {
         let pool = connect_db().await;
-        let mem = LongTermMemory::new(pool);
+        // probes=100 forces a full IVFFlat scan — needed when row count (2) << lists (100).
+        let mem = LongTermMemory::new(pool).with_probes(100);
 
         // Pre-test cleanup: wipe any stale rows left by previous failed runs.
         // Orphaned rows in the same embedding direction corrupt cosine search results.
@@ -347,5 +385,134 @@ mod tests {
         assert_eq!(results[0].metadata["source"], "test");
 
         mem.delete(id).await.expect("cleanup failed");
+    }
+
+    // ---------------------------------------------------------------------------
+    // L2-09 — semantic similarity integration test
+    //
+    // Requires both a running Postgres instance (DATABASE_URL) and the
+    // Python IPC server (LLM_SURFACE_URL, defaults to http://127.0.0.1:8001).
+    //
+    // Start the Python server in a separate terminal before running:
+    //   cd llm_surface && uv run uvicorn llm_surface.server:app --port 8001
+    //
+    // Then run this test with:
+    //   cargo test semantic_similarity_retrieves_related_memory_first -- --ignored
+    // ---------------------------------------------------------------------------
+
+    /// Internal request body for `POST /embed`.
+    #[derive(serde::Serialize)]
+    struct EmbedRequest {
+        text: String,
+    }
+
+    /// Internal response body from `POST /embed`.
+    #[derive(serde::Deserialize)]
+    struct EmbedResponse {
+        vector: Vec<f32>,
+    }
+
+    /// Fetch a real 1536-dim embedding from the Python IPC server.
+    ///
+    /// Panics if the server is unreachable or returns a non-2xx status — this
+    /// immediately fails the test in a readable way.
+    async fn fetch_embedding(llm_url: &str, text: &str) -> Vec<f32> {
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!("{}/embed", llm_url))
+            .json(&EmbedRequest {
+                text: text.to_owned(),
+            })
+            .send()
+            .await
+            .unwrap_or_else(|e| panic!("POST {llm_url}/embed failed: {e}"))
+            .error_for_status()
+            .unwrap_or_else(|e| panic!("/embed returned error status: {e}"));
+
+        resp.json::<EmbedResponse>()
+            .await
+            .expect("failed to parse /embed JSON response")
+            .vector
+    }
+
+    /// L2-09: end-to-end semantic similarity test.
+    ///
+    /// Stores two semantically distinct memories and queries with a phrase that
+    /// is semantically close to one of them. Asserts that cosine distance
+    /// ordering surfaces the correct memory first.
+    ///
+    /// Text pair chosen so the semantic gap is unambiguous to any embedding model:
+    ///   - "Eiffel Tower / Paris / iron lattice" cluster  ← *related* to query
+    ///   - "mitochondria / ATP / cellular respiration"    ← *unrelated* to query
+    ///   - query: "Famous iron tower in the French capital"
+    #[tokio::test]
+    #[ignore]
+    async fn semantic_similarity_retrieves_related_memory_first() {
+        // Fall back to the default local server address if the variable is absent.
+        let llm_url = std::env::var("LLM_SURFACE_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:8001".to_string());
+
+        let pool = connect_db().await;
+        // probes=100 guarantees all IVFFlat lists are scanned even with a tiny test
+        // corpus (2 rows << 100 lists). Default probes=10 would still miss them ~81%
+        // of the time. This setting does not affect the production runtime.
+        let mem = LongTermMemory::new(pool).with_probes(100);
+        // Remove any rows from previous failed runs so stale embeddings cannot
+        // interfere with cosine distance ordering.
+        for tag in ["l2_09_eiffel", "l2_09_bio"] {
+            sqlx::query!(
+                "DELETE FROM memories WHERE metadata->>'l2_09_tag' = $1",
+                tag
+            )
+            .execute(mem.pool())
+            .await
+            .expect("pre-test cleanup failed");
+        }
+
+        // ── Embed three texts ─────────────────────────────────────────────────
+        let text_paris = "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France.";
+        let text_bio =
+            "Mitochondria are membrane-bound organelles that produce ATP through cellular respiration.";
+        let text_query = "Famous iron lattice tower located in the French capital.";
+
+        let v_paris = fetch_embedding(&llm_url, text_paris).await;
+        let v_bio = fetch_embedding(&llm_url, text_bio).await;
+        let v_query = fetch_embedding(&llm_url, text_query).await;
+
+        // ── Store both memories ───────────────────────────────────────────────
+        let id_paris = mem
+            .store(text_paris, v_paris, serde_json::json!({"l2_09_tag": "l2_09_eiffel"}))
+            .await
+            .expect("store paris failed");
+        let id_bio = mem
+            .store(text_bio, v_bio, serde_json::json!({"l2_09_tag": "l2_09_bio"}))
+            .await
+            .expect("store bio failed");
+
+        // ── Query and assert ordering ─────────────────────────────────────────
+        let results = mem.query(v_query, 2).await.expect("query failed");
+
+        assert!(
+            !results.is_empty(),
+            "query returned no results — check that memories were stored"
+        );
+        assert_eq!(
+            results[0].id, id_paris,
+            "Paris memory should rank first; got content={:?} distance={:.4}",
+            results[0].content, results[0].distance
+        );
+
+        if results.len() >= 2 {
+            assert!(
+                results[0].distance < results[1].distance,
+                "Eiffel distance ({:.4}) should be less than biology distance ({:.4})",
+                results[0].distance,
+                results[1].distance
+            );
+        }
+
+        // ── Cleanup ───────────────────────────────────────────────────────────
+        mem.delete(id_paris).await.expect("cleanup paris failed");
+        mem.delete(id_bio).await.expect("cleanup bio failed");
     }
 }
