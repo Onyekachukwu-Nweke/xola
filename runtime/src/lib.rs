@@ -6,7 +6,9 @@
 //!
 //! See CLAUDE.md and docs/ for architecture and design rationale.
 
+pub mod ipc;
 pub mod memory;
+pub mod planning;
 pub mod tools;
 
 #[cfg(test)]
