@@ -12,10 +12,11 @@ tool call (e.g. refusal, safety filter, or when it has a direct answer).
 
 import json
 import logging
-from typing import Any
+from typing import Any, cast
 
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
+from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 
 from llm_surface.prompts import (
     REASON_MODEL,
@@ -71,13 +72,14 @@ async def reason_step(
         role = msg.get("role", "user")
         content = msg.get("content", "")
         # OpenAI accepts "system", "user", "assistant".
-        chat_messages.append({"role": role, "content": content})  # type: ignore[arg-type]
+        chat_messages.append({"role": role, "content": content})  # type: ignore[arg-type,misc]
 
     # Call the LLM with function calling enabled.
+    typed_tools = cast(list[ChatCompletionToolParam], openai_tools)
     response = await client.chat.completions.create(
         model=model,
         messages=chat_messages,
-        tools=openai_tools,
+        tools=typed_tools,
         tool_choice="auto",
     )
 
@@ -95,10 +97,17 @@ async def reason_step(
     # --- Path 1: Model made a tool call ---
     if message.tool_calls:
         tool_call = message.tool_calls[0]
+
+        # We only use standard function tool calls. The OpenAI SDK's type
+        # union includes CustomToolCall which lacks .function; guard here.
+        if not hasattr(tool_call, "function"):
+            raise ValueError(f"Unexpected tool call type: {type(tool_call)}")
         func = tool_call.function
 
         try:
-            arguments = json.loads(func.arguments) if func.arguments else {}
+            arguments: dict[str, Any] = (
+                json.loads(func.arguments) if func.arguments else {}
+            )
         except json.JSONDecodeError as exc:
             logger.error(
                 "Malformed tool_call arguments from LLM: name=%s args=%r",
