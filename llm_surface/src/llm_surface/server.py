@@ -4,7 +4,7 @@ Endpoints
 ---------
 POST /embed      — embed text, return a float vector          (L2-06, implemented)
 POST /summarize  — condense short-term buffer into summary    (L2-08, implemented)
-POST /reason     — run the ReAct loop, return next action     (L3-01, placeholder)
+POST /reason     — run the ReAct loop, return next action     (L3-01, implemented)
 POST /parse      — validate/coerce raw LLM output to JSON     (L3-02, placeholder)
 GET  /health     — liveness / readiness check
 
@@ -21,12 +21,15 @@ Or over TCP for development::
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from openai import APIError, AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from llm_surface.embeddings import EMBEDDING_MODEL, count_tokens, embed_text
+from llm_surface.prompts import REASON_MODEL
+from llm_surface.react import reason_step
 from llm_surface.summarizer import SUMMARIZE_MODEL, SUMMARY_MAX_TOKENS, summarize_messages
 
 # ---------------------------------------------------------------------------
@@ -98,6 +101,51 @@ class SummarizeResponse(BaseModel):
 
     summary: str = Field(..., description="Condensed summary paragraph.")
     token_count: int = Field(..., description="Tiktoken count of the summary text.")
+
+
+class ReasonMessage(BaseModel):
+    """A single message in the conversation history."""
+
+    role: str = Field(..., description="Message role: user, assistant, or system.")
+    content: str = Field(..., description="Message content.")
+
+
+class ToolSchema(BaseModel):
+    """A tool descriptor matching ``ToolRegistry::list_schemas()`` output."""
+
+    name: str
+    description: str = ""
+    parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class ReasonRequest(BaseModel):
+    """Body for ``POST /reason``.
+
+    Matches the IPC contract in ``AGENTS.md``::
+
+        {"messages": [...], "tool_schemas": [...], "memory_context": [...], "task_goal": "..."}
+    """
+
+    messages: list[ReasonMessage] = Field(default_factory=list)
+    tool_schemas: list[ToolSchema] = Field(default_factory=list)
+    memory_context: list[str] = Field(default_factory=list)
+    task_goal: str = Field(..., min_length=1, description="The high-level task goal.")
+
+
+class ReasonResponse(BaseModel):
+    """Successful response from ``POST /reason``.
+
+    Matches the IPC contract in ``AGENTS.md``::
+
+        {"thought": "...", "action": "...", "action_input": {...},
+         "is_final": false, "final_answer": null}
+    """
+
+    thought: str
+    action: str | None = None
+    action_input: dict[str, Any] = Field(default_factory=dict)
+    is_final: bool = False
+    final_answer: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -197,10 +245,32 @@ async def summarize(request: Request, body: SummarizeRequest) -> SummarizeRespon
     return SummarizeResponse(summary=summary_text, token_count=token_count)
 
 
-@app.post("/reason", tags=["planning"], status_code=501)
-async def reason() -> dict[str, str]:
-    """ReAct loop endpoint — not yet implemented (L3-01)."""
-    return {"detail": "not implemented"}
+@app.post("/reason", response_model=ReasonResponse, tags=["planning"])
+async def reason(request: Request, body: ReasonRequest) -> ReasonResponse:
+    """Execute one ReAct reasoning step.
+
+    Called by the Rust ``PlanExecutor`` on every iteration of the planning
+    loop. Constructs a prompt from the conversation history, available tools,
+    and memory context, then calls the LLM to decide the next action.
+
+    - **422** — Pydantic validation error (empty goal, malformed request).
+    - **502** — OpenAI API error or unparseable LLM response.
+    """
+    try:
+        result = await reason_step(
+            messages=[m.model_dump() for m in body.messages],
+            tool_schemas=[t.model_dump() for t in body.tool_schemas],
+            memory_context=body.memory_context,
+            task_goal=body.task_goal,
+            client=request.app.state.openai,
+            model=os.environ.get("REASON_MODEL", REASON_MODEL),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except APIError as exc:
+        raise HTTPException(status_code=502, detail=f"OpenAI API error: {exc}") from exc
+
+    return ReasonResponse(**result)
 
 
 @app.post("/parse", tags=["planning"], status_code=501)

@@ -193,9 +193,10 @@ def test_health_endpoint(client: TestClient) -> None:
     assert resp.json() == {"status": "ok"}
 
 
-def test_reason_returns_501(client: TestClient) -> None:
+def test_reason_rejects_empty_body(client: TestClient) -> None:
+    """POST /reason without a body returns 422 (validation error)."""
     resp = client.post("/reason")
-    assert resp.status_code == 501
+    assert resp.status_code == 422
 
 
 def test_parse_returns_501(client: TestClient) -> None:
