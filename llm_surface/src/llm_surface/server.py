@@ -4,7 +4,7 @@ Endpoints
 ---------
 POST /embed      — embed text, return a float vector          (L2-06, implemented)
 POST /summarize  — condense short-term buffer into summary    (L2-08, implemented)
-POST /reason     — run the ReAct loop, return next action     (L3-01, placeholder)
+POST /reason     — run the ReAct loop, return next action     (L3-01, implemented)
 POST /parse      — validate/coerce raw LLM output to JSON     (L3-02, placeholder)
 GET  /health     — liveness / readiness check
 
