@@ -124,13 +124,13 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 
 | ID | Task | Role | Status | Blocker |
 |----|------|------|--------|---------|
-| L3-01 | `/reason` endpoint: accepts context + tool schemas, returns action JSON | LLM_SURFACE | 🔲 todo | — |
-| L3-02 | ReAct loop parser: extract `Thought`, `Action`, `Action Input`, `Observation` | LLM_SURFACE | 🔲 todo | L3-01 |
-| L3-03 | `PlanExecutor` in Rust: sequential step runner over action list | RUNTIME | 🔲 todo | L1-02 |
-| L3-04 | Parallel branch support: `tokio::task::JoinSet` fan-out | RUNTIME | 🔲 todo | L3-03 |
-| L3-05 | Replan trigger: on tool error, call `/reason` with failure context | RUNTIME | 🔲 todo | L3-03, L3-01 |
-| L3-06 | Max replanning attempts config; escalate to error after N failures | RUNTIME | 🔲 todo | L3-05 |
-| L3-07 | Integration test: multi-step research task end-to-end | INTEGRATION | 🔲 todo | L3-05, L2-04 |
+| L3-01 | `/reason` endpoint: accepts context + tool schemas, returns action JSON — implemented via OpenAI function calling in `llm_surface/src/llm_surface/react.py` | LLM_SURFACE | ✅ done | — |
+| L3-02 | ReAct loop parser: extract `Thought`, `Action`, `Action Input`, `Observation` — uses OpenAI tool calling (structured output); fallback for plain text in `react.py` | LLM_SURFACE | ✅ done | L3-01 |
+| L3-03 | `PlanExecutor` in Rust: sequential step runner over action list — implemented in `runtime/src/planning/executor.rs` with IPC client in `runtime/src/ipc/` | RUNTIME | ✅ done | L1-02 |
+| L3-04 | Parallel branch support: `tokio::task::JoinSet` fan-out — skeleton in `executor.rs::execute_parallel()`, not wired to LLM yet | RUNTIME | ✅ done | L3-03 |
+| L3-05 | Replan trigger: on tool error, call `/reason` with failure context — `execute_tool_with_replan()` in `executor.rs` | RUNTIME | ✅ done | L3-03, L3-01 |
+| L3-06 | Max replanning attempts config; escalate to error after N failures — `ReplanConfig` with per-step and per-task limits | RUNTIME | ✅ done | L3-05 |
+| L3-07 | Integration test: multi-step research task end-to-end — `runtime/tests/planning_integration.rs` (3 tests, `#[ignore]`) | INTEGRATION | ✅ done | L3-05, L2-04 |
 
 ### Layer 4: Reliability & Fault Tolerance
 

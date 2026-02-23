@@ -262,8 +262,7 @@ impl<T: IpcTransport> PlanExecutor<T> {
             let config = self.config.clone();
 
             join_set.spawn(async move {
-                let branch_executor =
-                    PlanExecutor::new(ipc, registry, timeout_config, config);
+                let branch_executor = PlanExecutor::new(ipc, registry, timeout_config, config);
                 branch_executor.execute(&subtask).await
             });
         }
