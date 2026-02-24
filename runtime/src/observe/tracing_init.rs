@@ -25,10 +25,7 @@ pub fn build_tracer_provider(
         .map_err(TraceInitError::Exporter)?;
 
     let resource = Resource::builder()
-        .with_attributes([KeyValue::new(
-            "service.name",
-            config.service_name.clone(),
-        )])
+        .with_attributes([KeyValue::new("service.name", config.service_name.clone())])
         .build();
 
     let provider = SdkTracerProvider::builder()

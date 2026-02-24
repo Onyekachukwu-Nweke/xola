@@ -74,11 +74,10 @@ pub fn load_config(path: &str) -> Result<RuntimeConfig, ConfigError> {
         source: e,
     })?;
 
-    let config: RuntimeConfig =
-        toml::from_str(&contents).map_err(|e| ConfigError::Parse {
-            path: path.to_string(),
-            source: e,
-        })?;
+    let config: RuntimeConfig = toml::from_str(&contents).map_err(|e| ConfigError::Parse {
+        path: path.to_string(),
+        source: e,
+    })?;
 
     Ok(config)
 }

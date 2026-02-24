@@ -149,13 +149,13 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 
 | ID | Task | Role | Status | Blocker |
 |----|------|------|--------|---------|
-| L5-01 | Add `tracing` spans to tool dispatch, memory read/write, plan steps | RUNTIME | 🔲 todo | L1-08 |
-| L5-02 | OTel OTLP exporter → Jaeger | RUNTIME | 🔲 todo | L5-01 |
-| L5-03 | Prometheus: tool success rate, avg plan steps, memory hit rate, token spend | RUNTIME | 🔲 todo | — |
-| L5-04 | Cost accounting: token count × per-model price attached to each LLM span | LLM_SURFACE | 🔲 todo | — |
+| L5-01 | Add `tracing` spans to tool dispatch, memory read/write, plan steps — `#[instrument]` on registry, executor, STM, circuit breaker, loop detector; `info_span!` for `agent_run`, `plan_step`, `tool_call` | RUNTIME | ✅ done | L1-08 |
+| L5-02 | OTel OTLP exporter → Jaeger — `observe/tracing_init.rs` with `tracing-opentelemetry` layer + OTLP gRPC exporter; config in `config/local.toml` | RUNTIME | ✅ done | L5-01 |
+| L5-03 | Prometheus metrics: `xola_tool_calls_total`, `xola_tool_duration_seconds`, `xola_plan_steps_total`, `xola_plan_replans_total`, `xola_llm_tokens_total`, `xola_llm_cost_usd_total`, `xola_task_duration_seconds` — `observe/metrics.rs` with `/metrics` endpoint | RUNTIME | ✅ done | — |
+| L5-04 | Cost accounting: `llm_surface/costs.py` pricing table; `UsageInfo` in IPC response; token count × per-model price attached to spans and metrics | LLM_SURFACE | ✅ done | — |
 | L5-05 | axum SSR web UI: live run list, step inspector, memory browser | RUNTIME | 🔲 todo | L5-01 |
-| L5-06 | Jaeger in Docker Compose for local dev | INTEGRATION | 🔲 todo | — |
-| L5-07 | Integration test: run agent task, assert trace contains expected span types | INTEGRATION | 🔲 todo | L5-02 |
+| L5-06 | Jaeger in Docker Compose for local dev — `docker/docker-compose.yml` with `jaegertracing/all-in-one`, OTLP on :4317, UI on :16686 | INTEGRATION | ✅ done | — |
+| L5-07 | Integration test: `runtime/tests/observability_integration.rs` — `InMemorySpanExporter` asserts `agent_run`, `plan_step`, `tool_call` spans with attributes | INTEGRATION | ✅ done | L5-02 |
 
 ---
 
@@ -213,14 +213,19 @@ Response:
   "action": "string | null",
   "action_input": {},
   "is_final": false,
-  "final_answer": "string | null"
+  "final_answer": "string | null",
+  "usage": {"model": "string", "tokens_in": 0, "tokens_out": 0, "cost_usd": 0.0} | null
 }
 ```
+
+> `usage` is optional (added L5-04). Older Python servers that omit it are backward-compatible — Rust deserialises `None`.
 
 **`POST /embed`**
 
 Request: `{"text": "string", "model": "text-embedding-3-small"}`
-Response: `{"vector": [0.0, ...], "token_count": 42}`
+Response: `{"vector": [0.0, ...], "token_count": 42, "cost_usd": 0.0}`
+
+> `cost_usd` is optional (added L5-04). Defaults to `null` if omitted.
 
 **`POST /summarize`** _(added L2-08; see `PROPOSAL.md`)_
 

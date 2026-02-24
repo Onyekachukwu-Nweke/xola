@@ -29,8 +29,7 @@ async fn main() {
     // Initialise observability (tracing + metrics).
     // The guard must be held for the lifetime of the process to ensure
     // spans and metrics are flushed on shutdown.
-    let obs = observe::init_observability(&obs_config)
-        .expect("failed to initialise observability");
+    let obs = observe::init_observability(&obs_config).expect("failed to initialise observability");
     let _guard = obs.guard;
 
     // Spawn metrics server if enabled.

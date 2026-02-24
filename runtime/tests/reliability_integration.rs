@@ -127,7 +127,10 @@ async fn test_circuit_breaker_recovery_with_replan() {
         Ok(task_result) => {
             // Task should eventually succeed after replanning
             assert_eq!(task_result.outcome, Outcome::Success);
-            assert!(task_result.total_replans > 0, "Expected replanning to occur");
+            assert!(
+                task_result.total_replans > 0,
+                "Expected replanning to occur"
+            );
             println!(
                 "Circuit breaker test passed: {} replans, {} steps",
                 task_result.total_replans,
@@ -296,7 +299,10 @@ fn test_failure_category_classification() {
 
     // Resource exhaustion
     let exhaustion_err = PlanError::MaxIterationsReached(10);
-    assert_eq!(exhaustion_err.category(), FailureCategory::ResourceExhaustion);
+    assert_eq!(
+        exhaustion_err.category(),
+        FailureCategory::ResourceExhaustion
+    );
     assert!(!exhaustion_err.is_retryable());
     assert!(exhaustion_err.is_stuck());
 }

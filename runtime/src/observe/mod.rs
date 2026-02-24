@@ -69,8 +69,7 @@ pub fn init_observability(config: &ObservabilityConfig) -> Result<ObservabilityI
         .with_file(true)
         .with_line_number(true);
 
-    let env_filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
     // --- Tracing ---
     let tracer_provider = if config.enable_tracing {
@@ -89,9 +88,7 @@ pub fn init_observability(config: &ObservabilityConfig) -> Result<ObservabilityI
     let (meter_provider, prom_metrics, metrics_router) = if config.enable_metrics {
         match metrics::build_prometheus_exporter() {
             Ok((exporter, registry)) => {
-                let provider = SdkMeterProvider::builder()
-                    .with_reader(exporter)
-                    .build();
+                let provider = SdkMeterProvider::builder().with_reader(exporter).build();
                 let meter: Meter = provider.meter("xola");
                 let m = Arc::new(Metrics::new(&meter));
                 let router = metrics::metrics_router(registry);

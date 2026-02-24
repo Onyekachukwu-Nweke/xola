@@ -235,7 +235,8 @@ impl<T: IpcTransport> PlanExecutor<T> {
             if let Some(ref m) = self.metrics {
                 if let Some(ref usage) = reason_response.usage {
                     let attrs = &[opentelemetry::KeyValue::new("model", usage.model.clone())];
-                    m.llm_tokens_total.add(usage.tokens_in + usage.tokens_out, attrs);
+                    m.llm_tokens_total
+                        .add(usage.tokens_in + usage.tokens_out, attrs);
                     m.llm_cost_usd_total.add(usage.cost_usd, attrs);
                 }
             }
@@ -269,7 +270,7 @@ impl<T: IpcTransport> PlanExecutor<T> {
 
             // 3. Dispatch tool (with replan on failure).
             let action = reason_response.action.unwrap_or_default();
-            tracing::Span::current().record("step.action", &action.as_str());
+            tracing::Span::current().record("step.action", action.as_str());
             if action.is_empty() {
                 error!("LLM returned is_final=false with no action");
                 return Err(PlanError::Ipc(crate::ipc::IpcError::ServerError {

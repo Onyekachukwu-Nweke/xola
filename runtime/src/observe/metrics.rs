@@ -79,7 +79,8 @@ struct MetricsState {
 
 /// Build the Prometheus exporter and return both the exporter (for the OTel
 /// MeterProvider) and the Prometheus Registry (for the HTTP handler).
-pub fn build_prometheus_exporter() -> Result<(PrometheusExporter, PrometheusRegistry), MetricsInitError> {
+pub fn build_prometheus_exporter(
+) -> Result<(PrometheusExporter, PrometheusRegistry), MetricsInitError> {
     let registry = PrometheusRegistry::new();
     let exporter = opentelemetry_prometheus::exporter()
         .with_registry(registry.clone())

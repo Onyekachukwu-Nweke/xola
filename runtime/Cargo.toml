@@ -77,3 +77,4 @@ prometheus = "0.14"
 
 [dev-dependencies]
 tokio-test = "0.4"
+opentelemetry_sdk = { version = "0.31", features = ["testing"] }

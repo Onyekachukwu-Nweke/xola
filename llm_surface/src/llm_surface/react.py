@@ -120,18 +120,14 @@ async def reason_step(
         func = tool_call.function
 
         try:
-            arguments: dict[str, Any] = (
-                json.loads(func.arguments) if func.arguments else {}
-            )
+            arguments: dict[str, Any] = json.loads(func.arguments) if func.arguments else {}
         except json.JSONDecodeError as exc:
             logger.error(
                 "Malformed tool_call arguments from LLM: name=%s args=%r",
                 func.name,
                 func.arguments,
             )
-            raise ValueError(
-                f"Malformed tool call arguments for '{func.name}': {exc}"
-            ) from exc
+            raise ValueError(f"Malformed tool call arguments for '{func.name}': {exc}") from exc
 
         # Synthetic final_answer tool → mark task as complete.
         if func.name == "final_answer":
@@ -158,8 +154,7 @@ async def reason_step(
     if thought:
         # The model chose not to use any tool. Treat as a final answer.
         logger.warning(
-            "LLM returned plain text without a tool call — treating as final answer. "
-            "content=%r",
+            "LLM returned plain text without a tool call — treating as final answer. content=%r",
             thought,
         )
         return {

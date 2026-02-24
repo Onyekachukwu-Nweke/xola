@@ -94,7 +94,7 @@ impl IpcTransport for IpcClient {
         // Attach cost data to the current span (L5-04).
         if let Some(ref usage) = response.usage {
             let span = tracing::Span::current();
-            span.record("llm.model", &usage.model.as_str());
+            span.record("llm.model", usage.model.as_str());
             span.record("llm.tokens_in", usage.tokens_in);
             span.record("llm.tokens_out", usage.tokens_out);
             span.record("llm.cost_usd", usage.cost_usd);
