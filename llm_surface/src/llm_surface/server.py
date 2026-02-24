@@ -5,7 +5,7 @@ Endpoints
 POST /embed      — embed text, return a float vector          (L2-06, implemented)
 POST /summarize  — condense short-term buffer into summary    (L2-08, implemented)
 POST /reason     — run the ReAct loop, return next action     (L3-01, implemented)
-POST /parse      — validate/coerce raw LLM output to JSON     (L3-02, placeholder)
+POST /parse      — validate/coerce raw LLM output to JSON     (L4-03, implemented)
 GET  /health     — liveness / readiness check
 
 Run locally::
@@ -28,6 +28,7 @@ from openai import APIError, AsyncOpenAI
 from pydantic import BaseModel, Field
 
 from llm_surface.embeddings import EMBEDDING_MODEL, count_tokens, embed_text
+from llm_surface.parser import ParseRequest, ParseResponse, validate_against_schema
 from llm_surface.prompts import REASON_MODEL
 from llm_surface.react import reason_step
 from llm_surface.summarizer import SUMMARIZE_MODEL, SUMMARY_MAX_TOKENS, summarize_messages
@@ -273,7 +274,29 @@ async def reason(request: Request, body: ReasonRequest) -> ReasonResponse:
     return ReasonResponse(**result)
 
 
-@app.post("/parse", tags=["planning"], status_code=501)
-async def parse() -> dict[str, str]:
-    """Output parser endpoint — not yet implemented (L3-02)."""
-    return {"detail": "not implemented"}
+@app.post("/parse", response_model=ParseResponse, tags=["planning"])
+async def parse(body: ParseRequest) -> ParseResponse:
+    """Validate and parse LLM output against a JSON Schema.
+
+    This endpoint takes raw LLM output (which may be malformed JSON or not
+    match the expected structure) and validates it against a provided JSON
+    Schema. If validation fails, the response includes the error message.
+
+    For retry logic with corrective prompting, use ``parse_with_retry`` from
+    the parser module directly (L4-04).
+
+    - **422** — Pydantic validation error (malformed request).
+    - **200** — Parse attempt completed (check ``success`` field in response).
+
+    Parameters
+    ----------
+    body : ParseRequest
+        Contains raw LLM output, JSON Schema, and attempt number.
+
+    Returns
+    -------
+    ParseResponse
+        Parse result with success flag, parsed data, or error message.
+    """
+    result = validate_against_schema(body.raw, body.schema)
+    return result
