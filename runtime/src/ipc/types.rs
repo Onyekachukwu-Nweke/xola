@@ -26,6 +26,19 @@ pub struct ReasonRequest {
     pub task_goal: String,
 }
 
+/// Token usage and cost information from a single LLM call.
+#[derive(Debug, Clone, Deserialize)]
+pub struct UsageInfo {
+    /// Model name used for this call.
+    pub model: String,
+    /// Input (prompt) tokens consumed.
+    pub tokens_in: u64,
+    /// Output (completion) tokens consumed.
+    pub tokens_out: u64,
+    /// Estimated cost in USD for this call.
+    pub cost_usd: f64,
+}
+
 /// Response body from `POST /reason`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReasonResponse {
@@ -35,6 +48,8 @@ pub struct ReasonResponse {
     pub action_input: Value,
     pub is_final: bool,
     pub final_answer: Option<String>,
+    /// Token usage and cost (backward-compatible: None if Python server is older).
+    pub usage: Option<UsageInfo>,
 }
 
 // ---------------------------------------------------------------------------
@@ -54,6 +69,8 @@ pub struct EmbedRequest {
 pub struct EmbedResponse {
     pub vector: Vec<f32>,
     pub token_count: u32,
+    /// Estimated cost in USD (backward-compatible: None if Python server is older).
+    pub cost_usd: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------

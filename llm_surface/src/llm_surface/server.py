@@ -27,6 +27,7 @@ from fastapi import FastAPI, HTTPException, Request
 from openai import APIError, AsyncOpenAI
 from pydantic import BaseModel, Field
 
+from llm_surface.costs import calculate_cost
 from llm_surface.embeddings import EMBEDDING_MODEL, count_tokens, embed_text
 from llm_surface.parser import ParseRequest, ParseResponse, validate_against_schema
 from llm_surface.prompts import REASON_MODEL
@@ -58,11 +59,12 @@ class EmbedResponse(BaseModel):
 
     Matches the IPC contract in ``AGENTS.md``::
 
-        {"vector": [0.0, ...], "token_count": 42}
+        {"vector": [0.0, ...], "token_count": 42, "cost_usd": 0.0001}
     """
 
     vector: list[float] = Field(..., description="Embedding vector.")
     token_count: int = Field(..., description="Token count of the input text.")
+    cost_usd: float | None = Field(default=None, description="Estimated cost in USD.")
 
 
 class SummarizeRequest(BaseModel):
@@ -133,13 +135,22 @@ class ReasonRequest(BaseModel):
     task_goal: str = Field(..., min_length=1, description="The high-level task goal.")
 
 
+class UsageInfo(BaseModel):
+    """Token usage and cost from a single LLM call (L5-04)."""
+
+    model: str
+    tokens_in: int
+    tokens_out: int
+    cost_usd: float
+
+
 class ReasonResponse(BaseModel):
     """Successful response from ``POST /reason``.
 
     Matches the IPC contract in ``AGENTS.md``::
 
         {"thought": "...", "action": "...", "action_input": {...},
-         "is_final": false, "final_answer": null}
+         "is_final": false, "final_answer": null, "usage": {...}}
     """
 
     thought: str
@@ -147,6 +158,7 @@ class ReasonResponse(BaseModel):
     action_input: dict[str, Any] = Field(default_factory=dict)
     is_final: bool = False
     final_answer: str | None = None
+    usage: UsageInfo | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +227,8 @@ async def embed(request: Request, body: EmbedRequest) -> EmbedResponse:
     except APIError as exc:
         raise HTTPException(status_code=502, detail=f"OpenAI API error: {exc}") from exc
 
-    return EmbedResponse(vector=vector, token_count=token_count)
+    cost_usd = calculate_cost(body.model, token_count)
+    return EmbedResponse(vector=vector, token_count=token_count, cost_usd=cost_usd)
 
 
 @app.post("/summarize", response_model=SummarizeResponse, tags=["memory"])

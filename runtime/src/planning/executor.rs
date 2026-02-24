@@ -14,6 +14,7 @@ use crate::ipc::{IpcMessage, IpcTransport, ReasonRequest, SummarizeRequest};
 use crate::memory::{
     EpisodeInput, EpisodicLog, LongTermMemory, Message, Outcome, Role, ShortTermMemory, TaskStep,
 };
+use crate::observe::metrics::Metrics;
 use crate::reliability::{LoopDetector, LoopDetectorConfig, TimeoutConfig, TimeoutContext};
 use crate::tools::{ToolRegistry, ToolTimeoutConfig};
 
@@ -68,6 +69,7 @@ pub struct PlanExecutor<T: IpcTransport> {
     config: PlanConfig,
     loop_detector_config: LoopDetectorConfig,
     timeout_ctx_config: TimeoutConfig,
+    metrics: Option<Arc<Metrics>>,
 }
 
 impl<T: IpcTransport> PlanExecutor<T> {
@@ -90,7 +92,14 @@ impl<T: IpcTransport> PlanExecutor<T> {
             config,
             loop_detector_config: LoopDetectorConfig::default(),
             timeout_ctx_config: TimeoutConfig::default(),
+            metrics: None,
         }
+    }
+
+    /// Attach OTel metrics to this executor.
+    pub fn with_metrics(mut self, metrics: Arc<Metrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// Set custom loop detector configuration.
@@ -158,8 +167,9 @@ impl<T: IpcTransport> PlanExecutor<T> {
         };
 
         // Record final span attributes.
+        let elapsed = start.elapsed();
         let span = tracing::Span::current();
-        span.record("task.duration_ms", start.elapsed().as_millis() as u64);
+        span.record("task.duration_ms", elapsed.as_millis() as u64);
         match &result {
             Ok(r) => {
                 span.record("task.status", "ok");
@@ -169,6 +179,11 @@ impl<T: IpcTransport> PlanExecutor<T> {
             Err(_) => {
                 span.record("task.status", "error");
             }
+        }
+
+        // Record OTel metrics (L5-03).
+        if let Some(ref m) = self.metrics {
+            m.task_duration_seconds.record(elapsed.as_secs_f64(), &[]);
         }
 
         result
@@ -200,6 +215,11 @@ impl<T: IpcTransport> PlanExecutor<T> {
             );
             let _step_guard = step_span.enter();
 
+            // Record OTel metric (L5-03).
+            if let Some(ref m) = self.metrics {
+                m.plan_steps_total.add(1, &[]);
+            }
+
             debug!(iteration, "ReAct loop iteration");
 
             // Compress STM if nearing the token budget.
@@ -210,6 +230,15 @@ impl<T: IpcTransport> PlanExecutor<T> {
             // 1. Call /reason.
             let reason_request = build_reason_request(&stm, &self.registry, goal, &memory_context);
             let reason_response = self.ipc.reason(&reason_request).await?;
+
+            // Record LLM cost metrics (L5-04).
+            if let Some(ref m) = self.metrics {
+                if let Some(ref usage) = reason_response.usage {
+                    let attrs = &[opentelemetry::KeyValue::new("model", usage.model.clone())];
+                    m.llm_tokens_total.add(usage.tokens_in + usage.tokens_out, attrs);
+                    m.llm_cost_usd_total.add(usage.cost_usd, attrs);
+                }
+            }
 
             // Push the thought as an assistant message.
             if !reason_response.thought.is_empty() {
@@ -412,6 +441,11 @@ impl<T: IpcTransport> PlanExecutor<T> {
 
                     step_replans += 1;
                     *total_replans += 1;
+
+                    // Record OTel metric (L5-03).
+                    if let Some(ref m) = self.metrics {
+                        m.plan_replans_total.add(1, &[]);
+                    }
 
                     // Check per-step limit.
                     if step_replans >= self.config.replan.max_replans_per_step {
@@ -653,6 +687,7 @@ mod tests {
                     action_input: serde_json::json!({}),
                     is_final: true,
                     final_answer: Some("Default final answer".to_string()),
+                    usage: None,
                 })
             } else {
                 Ok(responses.remove(0))
@@ -663,6 +698,7 @@ mod tests {
             Ok(EmbedResponse {
                 vector: vec![0.0; 1536],
                 token_count: 5,
+                cost_usd: None,
             })
         }
 
@@ -687,6 +723,7 @@ mod tests {
             action_input,
             is_final,
             final_answer: final_answer.map(|s| s.to_string()),
+            usage: None,
         }
     }
 
@@ -1048,6 +1085,7 @@ mod tests {
                     action_input: serde_json::json!({}),
                     is_final: true,
                     final_answer: Some("Default final answer".to_string()),
+                    usage: None,
                 })
             } else {
                 Ok(responses.remove(0))
@@ -1058,6 +1096,7 @@ mod tests {
             Ok(EmbedResponse {
                 vector: vec![0.0; 1536],
                 token_count: 5,
+                cost_usd: None,
             })
         }
 

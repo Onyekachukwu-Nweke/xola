@@ -78,11 +78,29 @@ impl IpcTransport for IpcClient {
     #[instrument(
         name = "ipc_reason",
         skip(self, request),
-        fields(ipc.endpoint = "/reason", task_goal = %request.task_goal)
+        fields(
+            ipc.endpoint = "/reason",
+            task_goal = %request.task_goal,
+            llm.model = tracing::field::Empty,
+            llm.tokens_in = tracing::field::Empty,
+            llm.tokens_out = tracing::field::Empty,
+            llm.cost_usd = tracing::field::Empty,
+        )
     )]
     async fn reason(&self, request: &ReasonRequest) -> Result<ReasonResponse, IpcError> {
         debug!("Calling POST /reason");
-        self.post("/reason", request).await
+        let response: ReasonResponse = self.post("/reason", request).await?;
+
+        // Attach cost data to the current span (L5-04).
+        if let Some(ref usage) = response.usage {
+            let span = tracing::Span::current();
+            span.record("llm.model", &usage.model.as_str());
+            span.record("llm.tokens_in", usage.tokens_in);
+            span.record("llm.tokens_out", usage.tokens_out);
+            span.record("llm.cost_usd", usage.cost_usd);
+        }
+
+        Ok(response)
     }
 
     #[instrument(name = "ipc_embed", skip(self, request), fields(ipc.endpoint = "/embed"))]

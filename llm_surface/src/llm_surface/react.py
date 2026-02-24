@@ -18,6 +18,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 from openai.types.chat.chat_completion_tool_param import ChatCompletionToolParam
 
+from llm_surface.costs import calculate_cost
 from llm_surface.prompts import (
     REASON_MODEL,
     build_system_prompt,
@@ -87,11 +88,25 @@ async def reason_step(
     message = choice.message
     thought = (message.content or "").strip()
 
+    # Extract token usage and compute cost (L5-04).
+    usage_info: dict[str, Any] | None = None
+    if response.usage is not None:
+        tokens_in = response.usage.prompt_tokens
+        tokens_out = response.usage.completion_tokens
+        cost = calculate_cost(model, tokens_in, tokens_out)
+        usage_info = {
+            "model": model,
+            "tokens_in": tokens_in,
+            "tokens_out": tokens_out,
+            "cost_usd": cost,
+        }
+
     # Log the raw response for debugging (AGENTS.md: never swallow failures silently).
     logger.debug(
-        "Raw /reason response: content=%r, tool_calls=%r",
+        "Raw /reason response: content=%r, tool_calls=%r, usage=%r",
         message.content,
         message.tool_calls,
+        usage_info,
     )
 
     # --- Path 1: Model made a tool call ---
@@ -126,6 +141,7 @@ async def reason_step(
                 "action_input": {},
                 "is_final": True,
                 "final_answer": arguments.get("answer", ""),
+                "usage": usage_info,
             }
 
         # Regular tool call.
@@ -135,6 +151,7 @@ async def reason_step(
             "action_input": arguments,
             "is_final": False,
             "final_answer": None,
+            "usage": usage_info,
         }
 
     # --- Path 2: No tool call (plain text response) ---
@@ -151,6 +168,7 @@ async def reason_step(
             "action_input": {},
             "is_final": True,
             "final_answer": thought,
+            "usage": usage_info,
         }
 
     # --- Path 3: Empty response (safety filter or malformed) ---

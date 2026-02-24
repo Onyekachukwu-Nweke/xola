@@ -5,7 +5,9 @@
 //! accessed by name during execution.
 
 use super::{Tool, ToolError};
+use crate::observe::metrics::Metrics;
 use crate::reliability::{CircuitBreaker, CircuitBreakerConfig};
+use opentelemetry::KeyValue;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -58,6 +60,7 @@ pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
     circuit_breakers: HashMap<String, Arc<CircuitBreaker>>,
     circuit_breaker_config: CircuitBreakerConfig,
+    metrics: Option<Arc<Metrics>>,
 }
 
 /// Truncates a JSON value to a maximum character count for logging.
@@ -100,7 +103,14 @@ impl ToolRegistry {
             tools: HashMap::new(),
             circuit_breakers: HashMap::new(),
             circuit_breaker_config,
+            metrics: None,
         }
+    }
+
+    /// Attach OTel metrics to this registry.
+    pub fn with_metrics(mut self, metrics: Arc<Metrics>) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// Registers a tool in the registry.
@@ -320,10 +330,12 @@ impl ToolRegistry {
         tracing::Span::current().record("tool.duration_ms", latency_ms);
 
         // Step 4: Record result with circuit breaker (L4-02)
+        let status_label;
         match &result {
             Ok(output) => {
                 breaker.record_success();
                 tracing::Span::current().record("tool.status", "ok");
+                status_label = "ok";
 
                 let output_display = truncate_json(output, 500);
                 let output_size = output.to_string().len();
@@ -341,6 +353,7 @@ impl ToolRegistry {
             Err(err) => {
                 breaker.record_failure();
                 tracing::Span::current().record("tool.status", "error");
+                status_label = "error";
 
                 error!(
                     tool_name,
@@ -351,6 +364,17 @@ impl ToolRegistry {
                     "Tool execution failed"
                 );
             }
+        }
+
+        // Step 5: Record OTel metrics (L5-03)
+        if let Some(ref m) = self.metrics {
+            let attrs = vec![
+                KeyValue::new("tool_name", tool_name.to_string()),
+                KeyValue::new("status", status_label),
+            ];
+            m.tool_calls_total.add(1, &attrs);
+            m.tool_duration_seconds
+                .record(latency_ms as f64 / 1000.0, &attrs);
         }
 
         result
