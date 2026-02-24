@@ -30,7 +30,7 @@ async fn test_multi_step_task_completes() {
     dotenvy::dotenv().ok();
 
     let ipc = IpcClient::new(llm_surface_url()).expect("create IPC client");
-    let mut registry = ToolRegistry::new();
+    let mut registry = ToolRegistry::default();
     registry
         .register(Arc::new(MockTool))
         .expect("register mock tool");
@@ -69,7 +69,7 @@ async fn test_replan_on_tool_failure() {
     dotenvy::dotenv().ok();
 
     let ipc = IpcClient::new(llm_surface_url()).expect("create IPC client");
-    let mut registry = ToolRegistry::new();
+    let mut registry = ToolRegistry::default();
     registry
         .register(Arc::new(MockTool))
         .expect("register mock tool");
@@ -126,7 +126,7 @@ async fn test_episode_recorded_after_task() {
         .expect("connect to Postgres");
 
     let ipc = IpcClient::new(llm_surface_url()).expect("create IPC client");
-    let mut registry = ToolRegistry::new();
+    let mut registry = ToolRegistry::default();
     registry
         .register(Arc::new(MockTool))
         .expect("register mock tool");

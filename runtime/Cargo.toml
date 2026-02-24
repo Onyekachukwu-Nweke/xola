@@ -8,6 +8,9 @@ rust-version = "1.70"
 # Async runtime - everything async lives here
 tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "time"] }
 
+# Tokio utilities - CancellationToken for hierarchical timeouts (L4-06)
+tokio-util = "0.7"
+
 # Async trait support for dyn-compatible async methods
 async-trait = "0.1"
 

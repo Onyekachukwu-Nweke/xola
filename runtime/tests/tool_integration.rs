@@ -21,7 +21,7 @@ use xola_runtime::tools::{
 
 /// Helper function to create a registry with all tools registered.
 fn create_registry_with_all_tools() -> ToolRegistry {
-    let mut registry = ToolRegistry::new();
+    let mut registry = ToolRegistry::default();
     registry
         .register(Arc::new(MockTool))
         .expect("Failed to register MockTool");

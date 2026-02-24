@@ -136,14 +136,14 @@ Tasks are listed by layer. Each task has an ID, description, owning role, status
 
 | ID | Task | Role | Status | Blocker |
 |----|------|------|--------|---------|
-| L4-01 | `CircuitBreaker` struct: Closed/Open/HalfOpen FSM with atomic state | RUNTIME | 🔲 todo | — |
-| L4-02 | Wire `CircuitBreaker` per tool in registry | RUNTIME | 🔲 todo | L4-01, L1-02 |
-| L4-03 | `/parse` endpoint: validate LLM output against Pydantic schema | LLM_SURFACE | 🔲 todo | — |
-| L4-04 | Corrective re-prompt on parse failure; up to N retries | LLM_SURFACE | 🔲 todo | L4-03 |
-| L4-05 | `LoopDetector`: sliding window of last K tool call hashes; abort on cycle | RUNTIME | 🔲 todo | — |
-| L4-06 | Hierarchical timeout: tool < step < task; all via `CancellationToken` tree | RUNTIME | 🔲 todo | L1-04, L3-03 |
-| L4-07 | Failure taxonomy: distinguish timeout / parse_error / tool_error / loop | RUNTIME | 🔲 todo | L4-06 |
-| L4-08 | Integration test: inject tool failure, verify replan and recovery | INTEGRATION | 🔲 todo | L4-02, L3-05 |
+| L4-01 | `CircuitBreaker` struct: Closed/Open/HalfOpen FSM with atomic state | RUNTIME | ✅ done | — |
+| L4-02 | Wire `CircuitBreaker` per tool in registry | RUNTIME | ✅ done | L4-01, L1-02 |
+| L4-03 | `/parse` endpoint: validate LLM output against Pydantic schema | LLM_SURFACE | ✅ done | — |
+| L4-04 | Corrective re-prompt on parse failure; up to N retries | LLM_SURFACE | ✅ done | L4-03 |
+| L4-05 | `LoopDetector`: sliding window of last K tool call hashes; abort on cycle — integrated into `PlanExecutor` | RUNTIME | ✅ done | — |
+| L4-06 | Hierarchical timeout: tool < step < task; all via `CancellationToken` tree — task-level timeout enforced in `PlanExecutor` | RUNTIME | ✅ done | L1-04, L3-03 |
+| L4-07 | Failure taxonomy: distinguish timeout / parse_error / tool_error / loop — `FailureCategory` enum with `category()`, `is_retryable()`, and `is_stuck()` methods | RUNTIME | ✅ done | L4-06 |
+| L4-08 | Integration test: inject tool failure, verify replan and recovery — `runtime/tests/reliability_integration.rs` with circuit breaker, loop detection, and timeout tests | INTEGRATION | ✅ done | L4-02, L3-05 |
 
 ### Layer 5: Observability
 

@@ -9,6 +9,7 @@
 pub mod ipc;
 pub mod memory;
 pub mod planning;
+pub mod reliability;
 pub mod tools;
 
 #[cfg(test)]

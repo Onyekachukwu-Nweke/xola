@@ -11,5 +11,5 @@ pub mod error;
 pub mod executor;
 
 pub use config::{PlanConfig, ReplanConfig};
-pub use error::PlanError;
+pub use error::{FailureCategory, PlanError};
 pub use executor::{PlanExecutor, TaskResult};
