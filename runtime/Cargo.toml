@@ -2,11 +2,11 @@
 name = "xola-runtime"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.70"
+rust-version = "1.81"
 
 [dependencies]
 # Async runtime - everything async lives here
-tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "time"] }
+tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "time", "net"] }
 
 # Tokio utilities - CancellationToken for hierarchical timeouts (L4-06)
 tokio-util = "0.7"
@@ -59,7 +59,21 @@ dotenvy = "0.15"
 
 # Structured logging and tracing
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt"] }
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+
+# OpenTelemetry: traces + metrics via OTel SDK (L5-01, L5-02, L5-03)
+opentelemetry = "0.31"
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] }
+tracing-opentelemetry = "0.32"
+opentelemetry-prometheus = "0.31"
+
+# HTTP server for /metrics endpoint (L5-03) and future Web UI (L5-05)
+axum = "0.8"
+
+# TOML config file parsing
+toml = "0.9"
+prometheus = "0.14"
 
 [dev-dependencies]
 tokio-test = "0.4"

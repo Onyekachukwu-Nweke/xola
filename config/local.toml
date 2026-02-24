@@ -74,14 +74,17 @@ default_timeout = 30
 # url_fetch = 30
 
 [observability]
-# Enable OpenTelemetry tracing
+# Enable OpenTelemetry distributed tracing (→ Jaeger via OTLP)
 enable_tracing = true
 
-# Jaeger agent endpoint
-jaeger_endpoint = "http://localhost:14268/api/traces"
+# OTLP gRPC endpoint (Jaeger all-in-one listens on 4317)
+otlp_endpoint = "http://localhost:4317"
 
-# Enable Prometheus metrics
-enable_metrics = false
+# Enable Prometheus metrics scrape endpoint
+enable_metrics = true
 
-# Prometheus metrics port
-# metrics_port = 9090
+# Port for the /metrics HTTP server
+metrics_port = 9090
+
+# Service name reported in traces and metrics
+service_name = "xola-runtime"

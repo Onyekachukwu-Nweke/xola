@@ -18,6 +18,22 @@ services:
       retries: 10
       start_period: 10s
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: xola-jaeger
+    restart: unless-stopped
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"     # Jaeger UI
+      - "${OTLP_GRPC_PORT:-4317}:4317"       # OTLP gRPC receiver
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:16687/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
 volumes:
   postgres_data:
     driver: local

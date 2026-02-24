@@ -6,8 +6,10 @@
 //!
 //! See CLAUDE.md and docs/ for architecture and design rationale.
 
+pub mod config;
 pub mod ipc;
 pub mod memory;
+pub mod observe;
 pub mod planning;
 pub mod reliability;
 pub mod tools;
