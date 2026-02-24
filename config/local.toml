@@ -1,0 +1,87 @@
+# Local development configuration for Xola runtime
+#
+# This file is used when running the runtime locally. For production
+# deployments, configuration should be injected via environment variables.
+
+[runtime]
+# Directory for runtime logs (optional, defaults to stdout)
+# log_dir = "/tmp/xola/logs"
+
+# Log level: trace, debug, info, warn, error
+log_level = "debug"
+
+[ipc]
+# Python LLM surface server address
+server_url = "http://127.0.0.1:8001"
+
+# IPC timeout in seconds (default: 120)
+timeout = 120
+
+[database]
+# PostgreSQL connection URL
+# Defaults to reading from DATABASE_URL environment variable if not set
+url = "postgres://xola:xola@localhost:5432/xola"
+
+# Maximum number of connections in the pool
+max_connections = 10
+
+[memory]
+# Short-term memory token budget (default: 8000)
+stm_token_budget = 8000
+
+# Number of similar memories to retrieve from long-term memory
+ltm_query_limit = 5
+
+[planning]
+# Maximum ReAct loop iterations before giving up
+max_iterations = 50
+
+# Maximum replanning attempts per failed step
+max_replans_per_step = 3
+
+# Maximum total replans per task
+max_replans_per_task = 10
+
+[reliability]
+# Circuit breaker failure threshold before opening
+circuit_breaker_failure_threshold = 5
+
+# Circuit breaker recovery timeout in milliseconds
+circuit_breaker_recovery_timeout_ms = 30000
+
+# Loop detector window size (number of recent calls to track)
+loop_detector_window_size = 10
+
+# Loop detector repeat threshold
+loop_detector_repeat_threshold = 3
+
+# Tool timeout in seconds (default per tool)
+tool_timeout = 30
+
+# Step timeout in seconds (ReAct iteration)
+step_timeout = 60
+
+# Task timeout in seconds (entire execution)
+task_timeout = 300
+
+[tools]
+# Default timeout for tool execution in seconds
+default_timeout = 30
+
+# Per-tool timeout overrides (in seconds)
+# web_search = 60
+# code_exec = 120
+# url_fetch = 30
+
+[observability]
+# Enable OpenTelemetry tracing
+enable_tracing = true
+
+# Jaeger agent endpoint
+jaeger_endpoint = "http://localhost:14268/api/traces"
+
+# Enable Prometheus metrics
+enable_metrics = false
+
+# Prometheus metrics port
+# metrics_port = 9090
