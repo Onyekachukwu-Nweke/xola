@@ -70,6 +70,13 @@ pub enum ToolError {
     /// The LLM requested a tool that doesn't exist.
     #[error("Tool '{0}' not found in registry")]
     NotFound(String),
+
+    /// Circuit breaker is open for this tool.
+    ///
+    /// The tool has failed repeatedly and is temporarily unavailable.
+    /// Added in L4-02.
+    #[error("Circuit breaker is open for tool '{0}' - tool temporarily unavailable")]
+    CircuitOpen(String),
 }
 
 /// A tool the agent can execute.

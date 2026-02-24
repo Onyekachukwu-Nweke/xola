@@ -595,7 +595,7 @@ mod tests {
     }
 
     fn make_executor(ipc: Arc<MockIpc>) -> PlanExecutor<MockIpc> {
-        let mut registry = ToolRegistry::new();
+        let mut registry = ToolRegistry::default();
         registry
             .register(Arc::new(MockTool))
             .expect("register mock tool");
@@ -835,7 +835,7 @@ mod tests {
     #[test]
     fn test_build_reason_request_includes_goal() {
         let stm = ShortTermMemory::new(1000);
-        let registry = ToolRegistry::new();
+        let registry = ToolRegistry::default();
         let req = build_reason_request(&stm, &registry, "Find papers", &[]);
         assert_eq!(req.task_goal, "Find papers");
     }
@@ -843,7 +843,7 @@ mod tests {
     #[test]
     fn test_build_reason_request_includes_memory_context() {
         let stm = ShortTermMemory::new(1000);
-        let registry = ToolRegistry::new();
+        let registry = ToolRegistry::default();
         let ctx = vec!["memory 1".to_string(), "memory 2".to_string()];
         let req = build_reason_request(&stm, &registry, "goal", &ctx);
         assert_eq!(req.memory_context, ctx);

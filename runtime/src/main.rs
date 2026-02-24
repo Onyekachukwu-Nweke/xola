@@ -36,7 +36,7 @@ async fn main() {
     println!("L1-04: Per-tool timeout implemented ✓");
 
     // Initialize registry and register tools
-    let mut registry = ToolRegistry::new();
+    let mut registry = ToolRegistry::default();
     registry
         .register(Arc::new(MockTool))
         .expect("Failed to register mock tool");
