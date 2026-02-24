@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use thiserror::Error;
-use tracing::{error, info, warn};
+use tracing::{error, info, info_span, warn, Instrument};
 
 /// Errors that can occur during tool registration.
 #[derive(Error, Debug)]
@@ -259,6 +259,25 @@ impl ToolRegistry {
         input: Value,
         timeout: std::time::Duration,
     ) -> Result<Value, ToolError> {
+        let span = info_span!(
+            "tool_call",
+            tool.name = %tool_name,
+            tool.status = tracing::field::Empty,
+            tool.duration_ms = tracing::field::Empty,
+        );
+
+        self.execute_with_timeout_inner(tool_name, input, timeout)
+            .instrument(span)
+            .await
+    }
+
+    /// Inner implementation of tool execution, wrapped by the `tool_call` span.
+    async fn execute_with_timeout_inner(
+        &self,
+        tool_name: &str,
+        input: Value,
+        timeout: std::time::Duration,
+    ) -> Result<Value, ToolError> {
         // Start timer for latency measurement
         let start = Instant::now();
 
@@ -274,6 +293,7 @@ impl ToolRegistry {
 
         if !breaker.can_execute() {
             warn!(tool_name, "Circuit breaker is open - rejecting execution");
+            tracing::Span::current().record("tool.status", "circuit_open");
             return Err(ToolError::CircuitOpen(tool_name.to_string()));
         }
 
@@ -297,11 +317,13 @@ impl ToolRegistry {
 
         // Measure latency
         let latency_ms = start.elapsed().as_millis() as u64;
+        tracing::Span::current().record("tool.duration_ms", latency_ms);
 
         // Step 4: Record result with circuit breaker (L4-02)
         match &result {
             Ok(output) => {
                 breaker.record_success();
+                tracing::Span::current().record("tool.status", "ok");
 
                 let output_display = truncate_json(output, 500);
                 let output_size = output.to_string().len();
@@ -318,6 +340,7 @@ impl ToolRegistry {
             }
             Err(err) => {
                 breaker.record_failure();
+                tracing::Span::current().record("tool.status", "error");
 
                 error!(
                     tool_name,

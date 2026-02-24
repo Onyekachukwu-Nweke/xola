@@ -152,6 +152,7 @@ impl EpisodicLog {
     /// Append a completed task record.
     ///
     /// Returns the newly assigned episode `Uuid`.
+    #[tracing::instrument(name = "episodic_log_write", skip(self, ep), fields(episode.outcome = %ep.outcome))]
     pub async fn insert(&self, ep: EpisodeInput<'_>) -> Result<Uuid, EpisodeError> {
         // Enforce the migration invariant: error is Some iff outcome is Failure.
         debug_assert!(

@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use serde_json::Value;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, info_span, warn, Instrument};
 
 use crate::ipc::{IpcMessage, IpcTransport, ReasonRequest, SummarizeRequest};
 use crate::memory::{
@@ -122,6 +122,20 @@ impl<T: IpcTransport> PlanExecutor<T> {
     /// Returns a `TaskResult` on success or a `PlanError` if limits are
     /// reached or an unrecoverable error occurs.
     pub async fn execute(&self, goal: &str) -> Result<TaskResult, PlanError> {
+        let span = info_span!(
+            "agent_run",
+            task.goal = %goal,
+            task.status = tracing::field::Empty,
+            task.iterations = tracing::field::Empty,
+            task.replans = tracing::field::Empty,
+            task.duration_ms = tracing::field::Empty,
+        );
+
+        self.execute_instrumented(goal).instrument(span).await
+    }
+
+    /// Instrumented execution wrapper that records span fields on completion.
+    async fn execute_instrumented(&self, goal: &str) -> Result<TaskResult, PlanError> {
         let start = Instant::now();
 
         // Create per-task reliability structures (L4-05, L4-06).
@@ -132,7 +146,7 @@ impl<T: IpcTransport> PlanExecutor<T> {
         let task_duration = timeout_ctx.task_timeout();
         let task_deadline = tokio::time::sleep(task_duration);
 
-        tokio::select! {
+        let result = tokio::select! {
             result = self.execute_inner(goal, &mut loop_detector, &timeout_ctx, start) => result,
             _ = task_deadline => {
                 timeout_ctx.cancel_task();
@@ -141,7 +155,23 @@ impl<T: IpcTransport> PlanExecutor<T> {
                     duration_ms: task_duration.as_millis() as u64,
                 })
             }
+        };
+
+        // Record final span attributes.
+        let span = tracing::Span::current();
+        span.record("task.duration_ms", start.elapsed().as_millis() as u64);
+        match &result {
+            Ok(r) => {
+                span.record("task.status", "ok");
+                span.record("task.iterations", r.iterations as u64);
+                span.record("task.replans", r.total_replans as u64);
+            }
+            Err(_) => {
+                span.record("task.status", "error");
+            }
         }
+
+        result
     }
 
     /// Inner execution logic, wrapped by timeout in `execute()`.
@@ -163,6 +193,13 @@ impl<T: IpcTransport> PlanExecutor<T> {
         let memory_context = self.query_memory_context(goal).await;
 
         for iteration in 0..self.config.max_iterations {
+            let step_span = info_span!(
+                "plan_step",
+                step.index = iteration,
+                step.action = tracing::field::Empty,
+            );
+            let _step_guard = step_span.enter();
+
             debug!(iteration, "ReAct loop iteration");
 
             // Compress STM if nearing the token budget.
@@ -203,6 +240,7 @@ impl<T: IpcTransport> PlanExecutor<T> {
 
             // 3. Dispatch tool (with replan on failure).
             let action = reason_response.action.unwrap_or_default();
+            tracing::Span::current().record("step.action", &action.as_str());
             if action.is_empty() {
                 error!("LLM returned is_final=false with no action");
                 return Err(PlanError::Ipc(crate::ipc::IpcError::ServerError {

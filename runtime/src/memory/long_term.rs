@@ -95,6 +95,7 @@ impl LongTermMemory {
     ///
     /// # Errors
     /// Returns [`MemoryError::DimensionMismatch`] if `embedding.len() != 1536`.
+    #[tracing::instrument(name = "memory_write", skip(self, embedding, metadata), fields(memory.r#type = "long_term"))]
     pub async fn store(
         &self,
         content: &str,
@@ -141,6 +142,7 @@ impl LongTermMemory {
     ///
     /// # Errors
     /// Returns [`MemoryError::DimensionMismatch`] if `embedding.len() != 1536`.
+    #[tracing::instrument(name = "memory_read", skip(self, embedding), fields(memory.r#type = "long_term", memory.results_count = tracing::field::Empty))]
     pub async fn query(
         &self,
         embedding: Vec<f32>,
@@ -197,6 +199,7 @@ impl LongTermMemory {
             })
             .collect();
 
+        tracing::Span::current().record("memory.results_count", records.len() as u64);
         tracing::debug!(
             top_k,
             probes = self.ivfflat_probes,

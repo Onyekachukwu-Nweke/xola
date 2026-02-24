@@ -115,6 +115,16 @@ impl ShortTermMemory {
     /// prevents a single large message from deadlocking the agent.
     ///
     /// Eviction removes the **oldest** message(s) until the new message fits.
+    #[tracing::instrument(
+        name = "stm_push",
+        skip(self, msg),
+        fields(
+            memory.type_ = "short_term",
+            memory.role = %msg.role,
+            memory.tokens = msg.token_count,
+            memory.buffer_tokens = self.token_count,
+        )
+    )]
     pub fn push(&mut self, msg: Message) {
         let incoming_tokens = msg.token_count;
 

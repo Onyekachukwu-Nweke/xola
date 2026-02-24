@@ -75,19 +75,27 @@ impl IpcClient {
 
 #[async_trait::async_trait]
 impl IpcTransport for IpcClient {
-    #[instrument(skip(self, request), fields(task_goal = %request.task_goal))]
+    #[instrument(
+        name = "ipc_reason",
+        skip(self, request),
+        fields(ipc.endpoint = "/reason", task_goal = %request.task_goal)
+    )]
     async fn reason(&self, request: &ReasonRequest) -> Result<ReasonResponse, IpcError> {
         debug!("Calling POST /reason");
         self.post("/reason", request).await
     }
 
-    #[instrument(skip(self, request))]
+    #[instrument(name = "ipc_embed", skip(self, request), fields(ipc.endpoint = "/embed"))]
     async fn embed(&self, request: &EmbedRequest) -> Result<EmbedResponse, IpcError> {
         debug!("Calling POST /embed");
         self.post("/embed", request).await
     }
 
-    #[instrument(skip(self, request))]
+    #[instrument(
+        name = "ipc_summarize",
+        skip(self, request),
+        fields(ipc.endpoint = "/summarize")
+    )]
     async fn summarize(&self, request: &SummarizeRequest) -> Result<SummarizeResponse, IpcError> {
         debug!("Calling POST /summarize");
         self.post("/summarize", request).await

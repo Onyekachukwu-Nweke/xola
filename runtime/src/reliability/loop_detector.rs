@@ -151,6 +151,12 @@ impl LoopDetector {
         // Check if any hash exceeds the threshold
         for (hash, count) in counts {
             if count >= self.repeat_threshold {
+                tracing::warn!(
+                    loop.hash = hash,
+                    loop.repeat_count = count,
+                    loop.threshold = self.repeat_threshold,
+                    "loop detector: repetitive tool call pattern detected"
+                );
                 return Some(format!(
                     "Detected loop: tool called {} times with identical input (hash: {})",
                     count, hash

@@ -131,6 +131,11 @@ impl CircuitBreaker {
                 if self.should_attempt_reset() {
                     // Transition to half-open for probe
                     self.state.store(State::HalfOpen as u8, Ordering::Release);
+                    tracing::info!(
+                        circuit_breaker.from = "Open",
+                        circuit_breaker.to = "HalfOpen",
+                        "circuit breaker: transitioning to half-open for probe"
+                    );
                     true
                 } else {
                     false
@@ -156,6 +161,11 @@ impl CircuitBreaker {
                 // Probe succeeded - transition back to closed
                 self.state.store(State::Closed as u8, Ordering::Release);
                 self.failure_count.store(0, Ordering::Release);
+                tracing::info!(
+                    circuit_breaker.from = "HalfOpen",
+                    circuit_breaker.to = "Closed",
+                    "circuit breaker: probe succeeded, closing circuit"
+                );
             }
             State::Open => {
                 // Shouldn't happen, but be defensive
@@ -184,11 +194,22 @@ impl CircuitBreaker {
                 if new_count >= self.config.failure_threshold {
                     // Threshold reached - open the circuit
                     self.state.store(State::Open as u8, Ordering::Release);
+                    tracing::warn!(
+                        circuit_breaker.from = "Closed",
+                        circuit_breaker.to = "Open",
+                        circuit_breaker.failures = new_count,
+                        "circuit breaker: failure threshold reached, opening circuit"
+                    );
                 }
             }
             State::HalfOpen => {
                 // Probe failed - go back to open
                 self.state.store(State::Open as u8, Ordering::Release);
+                tracing::warn!(
+                    circuit_breaker.from = "HalfOpen",
+                    circuit_breaker.to = "Open",
+                    "circuit breaker: probe failed, reopening circuit"
+                );
             }
             State::Open => {
                 // Already open, no-op
