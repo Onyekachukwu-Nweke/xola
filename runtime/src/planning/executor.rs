@@ -14,6 +14,7 @@ use crate::ipc::{IpcMessage, IpcTransport, ReasonRequest, SummarizeRequest};
 use crate::memory::{
     EpisodeInput, EpisodicLog, LongTermMemory, Message, Outcome, Role, ShortTermMemory, TaskStep,
 };
+use crate::reliability::{LoopDetector, LoopDetectorConfig, TimeoutConfig, TimeoutContext};
 use crate::tools::{ToolRegistry, ToolTimeoutConfig};
 
 use super::config::PlanConfig;
@@ -65,6 +66,8 @@ pub struct PlanExecutor<T: IpcTransport> {
     long_term_memory: Option<LongTermMemory>,
     episodic_log: Option<EpisodicLog>,
     config: PlanConfig,
+    loop_detector_config: LoopDetectorConfig,
+    timeout_ctx_config: TimeoutConfig,
 }
 
 impl<T: IpcTransport> PlanExecutor<T> {
@@ -85,7 +88,21 @@ impl<T: IpcTransport> PlanExecutor<T> {
             long_term_memory: None,
             episodic_log: None,
             config,
+            loop_detector_config: LoopDetectorConfig::default(),
+            timeout_ctx_config: TimeoutConfig::default(),
         }
+    }
+
+    /// Set custom loop detector configuration.
+    pub fn with_loop_detector_config(mut self, config: LoopDetectorConfig) -> Self {
+        self.loop_detector_config = config;
+        self
+    }
+
+    /// Set custom timeout context configuration.
+    pub fn with_timeout_context_config(mut self, config: TimeoutConfig) -> Self {
+        self.timeout_ctx_config = config;
+        self
     }
 
     /// Attach long-term memory for semantic context retrieval.
@@ -106,6 +123,35 @@ impl<T: IpcTransport> PlanExecutor<T> {
     /// reached or an unrecoverable error occurs.
     pub async fn execute(&self, goal: &str) -> Result<TaskResult, PlanError> {
         let start = Instant::now();
+
+        // Create per-task reliability structures (L4-05, L4-06).
+        let mut loop_detector = LoopDetector::from_config(self.loop_detector_config.clone());
+        let timeout_ctx = TimeoutContext::new_task(self.timeout_ctx_config.clone());
+
+        // Race execution against task-level timeout.
+        let task_duration = timeout_ctx.task_timeout();
+        let task_deadline = tokio::time::sleep(task_duration);
+
+        tokio::select! {
+            result = self.execute_inner(goal, &mut loop_detector, &timeout_ctx, start) => result,
+            _ = task_deadline => {
+                timeout_ctx.cancel_task();
+                Err(PlanError::Timeout {
+                    level: "task".to_string(),
+                    duration_ms: task_duration.as_millis() as u64,
+                })
+            }
+        }
+    }
+
+    /// Inner execution logic, wrapped by timeout in `execute()`.
+    async fn execute_inner(
+        &self,
+        goal: &str,
+        loop_detector: &mut LoopDetector,
+        _timeout_ctx: &TimeoutContext,
+        start: Instant,
+    ) -> Result<TaskResult, PlanError> {
         let mut stm = ShortTermMemory::new(self.config.stm_token_budget);
         let mut steps: Vec<TaskStep> = Vec::new();
         let mut total_replans: usize = 0;
@@ -175,6 +221,7 @@ impl<T: IpcTransport> PlanExecutor<T> {
                     &mut total_replans,
                     goal,
                     &memory_context,
+                    loop_detector,
                 )
                 .await?;
 
@@ -294,13 +341,24 @@ impl<T: IpcTransport> PlanExecutor<T> {
         total_replans: &mut usize,
         goal: &str,
         memory_context: &[String],
+        loop_detector: &mut LoopDetector,
     ) -> Result<StepOutcome, PlanError> {
         let mut action = initial_action.to_string();
         let mut input = initial_input.clone();
         let mut step_replans: usize = 0;
 
         loop {
+            // Check for loops before executing (L4-05).
+            if let Some(loop_msg) = loop_detector.is_looping() {
+                warn!("Loop detected: {}", loop_msg);
+                return Err(PlanError::Loop(loop_msg));
+            }
+
             let timeout = self.timeout_config.get_timeout(&action);
+
+            // Record this tool call in the loop detector (L4-05).
+            loop_detector.record(&action, &input);
+
             match self
                 .registry
                 .execute_with_timeout(&action, input.clone(), timeout)
@@ -671,12 +729,13 @@ mod tests {
     #[tokio::test]
     async fn test_executor_max_iterations() {
         // LLM always wants to call a tool — never returns is_final.
+        // Use different messages each time to avoid loop detection.
         let responses: Vec<_> = (0..10)
-            .map(|_| {
+            .map(|i| {
                 make_reason_response(
                     "Still working...",
                     Some("mock_echo"),
-                    serde_json::json!({"message": "loop"}),
+                    serde_json::json!({"message": format!("iteration {}", i)}),
                     false,
                     None,
                 )
@@ -847,5 +906,206 @@ mod tests {
         let ctx = vec!["memory 1".to_string(), "memory 2".to_string()];
         let req = build_reason_request(&stm, &registry, "goal", &ctx);
         assert_eq!(req.memory_context, ctx);
+    }
+
+    // -----------------------------------------------------------------------
+    // Loop detection tests (L4-05)
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_executor_detects_loop() {
+        // LLM tries to call the same tool with the same input 5 times.
+        let input = serde_json::json!({"message": "repeated"});
+        let responses: Vec<_> = (0..5)
+            .map(|_| {
+                make_reason_response("Try again.", Some("mock_echo"), input.clone(), false, None)
+            })
+            .collect();
+
+        let ipc = Arc::new(MockIpc::new(responses));
+        let mut executor = make_executor(ipc);
+
+        // Set loop detector to trigger after 3 repeats (default)
+        executor.loop_detector_config = LoopDetectorConfig {
+            window_size: 10,
+            repeat_threshold: 3,
+        };
+
+        let err = executor.execute("Loop task").await.unwrap_err();
+
+        match err {
+            PlanError::Loop(msg) => {
+                assert!(msg.contains("3 times"), "Expected '3 times' in: {}", msg);
+            }
+            other => panic!("Expected Loop error, got: {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_executor_no_loop_with_varied_inputs() {
+        // Same tool, different inputs each time — should not trigger loop detection.
+        let responses: Vec<_> = (0..5)
+            .map(|i| {
+                make_reason_response(
+                    "Next step.",
+                    Some("mock_echo"),
+                    serde_json::json!({"message": format!("step {}", i)}),
+                    false,
+                    None,
+                )
+            })
+            .collect();
+
+        // Add final answer to terminate.
+        let mut all_responses = responses;
+        all_responses.push(make_reason_response(
+            "Done.",
+            None,
+            serde_json::json!({}),
+            true,
+            Some("Completed"),
+        ));
+
+        let ipc = Arc::new(MockIpc::new(all_responses));
+        let executor = make_executor(ipc);
+        let result = executor.execute("Varied task").await.unwrap();
+
+        assert_eq!(result.outcome, Outcome::Success);
+        assert_eq!(result.steps.len(), 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // Timeout tests (L4-06)
+    // -----------------------------------------------------------------------
+
+    /// Mock IPC with artificial delay to test timeouts.
+    struct SlowMockIpc {
+        responses: Mutex<Vec<crate::ipc::ReasonResponse>>,
+        delay: std::time::Duration,
+    }
+
+    impl SlowMockIpc {
+        fn new(responses: Vec<crate::ipc::ReasonResponse>, delay: std::time::Duration) -> Self {
+            Self {
+                responses: Mutex::new(responses),
+                delay,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl IpcTransport for SlowMockIpc {
+        async fn reason(
+            &self,
+            _req: &ReasonRequest,
+        ) -> Result<crate::ipc::ReasonResponse, IpcError> {
+            // Simulate slow LLM call.
+            tokio::time::sleep(self.delay).await;
+
+            let mut responses = self.responses.lock().unwrap();
+            if responses.is_empty() {
+                Ok(crate::ipc::ReasonResponse {
+                    thought: "Default done.".to_string(),
+                    action: None,
+                    action_input: serde_json::json!({}),
+                    is_final: true,
+                    final_answer: Some("Default final answer".to_string()),
+                })
+            } else {
+                Ok(responses.remove(0))
+            }
+        }
+
+        async fn embed(&self, _req: &EmbedRequest) -> Result<EmbedResponse, IpcError> {
+            Ok(EmbedResponse {
+                vector: vec![0.0; 1536],
+                token_count: 5,
+            })
+        }
+
+        async fn summarize(&self, _req: &SummarizeRequest) -> Result<SummarizeResponse, IpcError> {
+            Ok(SummarizeResponse {
+                summary: "Summary of conversation.".to_string(),
+                token_count: 10,
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn test_executor_task_timeout() {
+        use std::time::Duration;
+
+        // LLM tries to run multiple steps, but each step takes 50ms.
+        let responses: Vec<_> = (0..10)
+            .map(|i| {
+                make_reason_response(
+                    "Working...",
+                    Some("mock_echo"),
+                    serde_json::json!({"message": format!("step {}", i)}),
+                    false,
+                    None,
+                )
+            })
+            .collect();
+
+        // Each reason call takes 50ms → 10 iterations = 500ms minimum.
+        let ipc = Arc::new(SlowMockIpc::new(responses, Duration::from_millis(50)));
+
+        let mut registry = ToolRegistry::default();
+        registry
+            .register(Arc::new(MockTool))
+            .expect("register mock tool");
+
+        let mut executor = PlanExecutor::new(
+            ipc,
+            Arc::new(registry),
+            ToolTimeoutConfig::default(),
+            PlanConfig {
+                max_iterations: 20,
+                stm_token_budget: 8000,
+                ..Default::default()
+            },
+        );
+
+        // Task timeout is 100ms → should trigger after 2 iterations (2 × 50ms).
+        executor.timeout_ctx_config = TimeoutConfig {
+            tool_timeout: Duration::from_secs(30),
+            step_timeout: Duration::from_secs(60),
+            task_timeout: Duration::from_millis(100),
+        };
+
+        let err = executor.execute("Long task").await.unwrap_err();
+
+        match err {
+            PlanError::Timeout { level, .. } => {
+                assert_eq!(level, "task");
+            }
+            other => panic!("Expected Timeout error, got: {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_executor_completes_within_task_timeout() {
+        use std::time::Duration;
+
+        // Quick task that completes before timeout.
+        let ipc = Arc::new(MockIpc::new(vec![make_reason_response(
+            "Done immediately.",
+            None,
+            serde_json::json!({}),
+            true,
+            Some("Fast result"),
+        )]));
+
+        let mut executor = make_executor(ipc);
+        executor.timeout_ctx_config = TimeoutConfig {
+            tool_timeout: Duration::from_secs(30),
+            step_timeout: Duration::from_secs(60),
+            task_timeout: Duration::from_secs(5),
+        };
+
+        let result = executor.execute("Fast task").await.unwrap();
+        assert_eq!(result.outcome, Outcome::Success);
+        assert_eq!(result.final_answer.as_deref(), Some("Fast result"));
     }
 }

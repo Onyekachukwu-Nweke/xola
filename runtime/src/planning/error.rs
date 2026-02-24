@@ -34,4 +34,17 @@ pub enum PlanError {
     /// A tokio JoinHandle error (task panicked).
     #[error("task join error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
+
+    /// Agent is stuck in a loop, calling the same tool repeatedly.
+    #[error("loop detected: {0}")]
+    Loop(String),
+
+    /// Execution timeout at task, step, or tool level.
+    #[error("{level} timeout after {duration_ms}ms")]
+    Timeout {
+        /// Level at which timeout occurred (task/step/tool)
+        level: String,
+        /// Duration in milliseconds before timeout
+        duration_ms: u64,
+    },
 }
